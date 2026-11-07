@@ -8,6 +8,23 @@
 
 > **현재 상태:** 작동하는 웹 프로토타입입니다. 브라우저 BLE 기기 선택·기록과 이름 기반 의심 후보 표시, 광학 검사, 사진 도감 검색, 외부 RSSI 비교와 **광고 패킷 복합 필터**를 제공합니다. 복합 필터는 가져온 회사 ID·UUID·바이트를 사용자가 제공한 규칙으로 대조합니다. 실기기로 검증한 기본 규칙, 교실 전체 광고 자동 수집, 페어링/인터넷 사용 판별은 아직 없습니다.
 
+## 어떤 기기·브라우저로 열어야 하나요?
+
+**별도 ExamGuard 앱 다운로드 없이 [웹 주소](https://epoko77-ai.github.io/examguard/#wireless)로 사용합니다.** 홈 화면에 추가하는 것은 선택 사항이며, 브라우저의 Bluetooth 제한을 없애지는 않습니다.
+
+| 사용 기기 | 여는 브라우저 | A · Bluetooth 탐색 | B · 광학 검사 / C · 도감 |
+| --- | --- | --- | --- |
+| Android 휴대전화 | **Chrome 앱을 직접 실행** | 지원 환경에서 이용 | 이용 가능 |
+| iPhone·iPad | **Safari** | **미지원. 일반 iOS용 Chrome도 동일** | 이용 가능 |
+| Windows 10/11·macOS | **Chrome 또는 Edge** | Bluetooth 어댑터·권한 필요 | 이용 가능 |
+| Chromebook | **Chrome** | Bluetooth 어댑터·권한 필요 | 이용 가능 |
+
+- **Android:** 카카오톡·네이버·SNS 안에서 열린 화면이라면 주소 복사 → Chrome 앱 실행 → 주소창에 붙여넣기 → Bluetooth 켜기 → 요청되는 권한 허용 → 준비 항목 3개 확인 → **교실 스캔 시작**.
+- **iPhone·iPad:** Safari에서 접속 → **B · 광학 검사**에서 카메라 권한 허용 또는 사진 열기 → **C · 도감·사진 대조**. Bluetooth 탐색이 필요하면 Android 또는 지원 PC를 함께 사용하세요. **Safari로 변경하거나 홈 화면에 설치하는 것으로 BLE 기능이 생기지는 않습니다.**
+- **PC:** 지원 브라우저에서 HTTPS 주소를 열고 Bluetooth 설정과 어댑터를 확인합니다. Safari·Firefox는 BLE 탐색을 지원하지 않습니다. Linux의 기본 환경도 권장하지 않습니다.
+
+카메라 조명은 기기별 지원 여부가 다르며, 사진 대조는 첫 실행 때 약 104 MB를 내려받습니다. 앱은 실제 Bluetooth API 제공 여부를 확인해 접속 안내와 대체 기능을 표시합니다. 지원 브라우저라도 학교 관리 정책·하드웨어·권한 때문에 탐색이 제한될 수 있습니다. [Chrome 공식 지원 환경](https://developer.chrome.com/docs/capabilities/bluetooth) · [MDN 호환성](https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API#browser_compatibility)
+
 ![ExamGuard 모드 A: 교실 전파 탐색 화면](https://epoko77-ai.github.io/examguard/previews/desktop-wireless.png)
 
 ## 왜 만들었나요?
@@ -99,8 +116,8 @@ ExamGuard는 위 탐지 프로젝트의 포크가 아니며, 해당 코드를 �
 
 | 환경/기능 | 현재 범위 |
 | --- | --- |
-| 모드 A · Android/노트북 | HTTPS 또는 localhost, Web Bluetooth 지원 브라우저·OS·어댑터 필요 |
-| 모드 A · iPhone/iPad Safari | Web Bluetooth 미지원. B·C 모드와 외부 측정 파일 비교 이용 |
+| 모드 A · Android/PC | Android Chrome, Windows 10/11·macOS Chrome/Edge, ChromeOS Chrome 권장. HTTPS 또는 localhost·Bluetooth 어댑터·권한 필요 |
+| 모드 A · iPhone/iPad | Safari·일반 iOS Chrome에서 Web Bluetooth 미지원. 홈 화면 설치로 해결되지 않음. B·C 모드와 외부 측정 파일 비교 이용 |
 | 모드 B | 카메라 권한 필요. 조명은 기기별 지원 여부 확인. 필터는 육안 관찰 보조이며 핀홀·HUD 자동 검출 기능 아님 |
 | 모드 C | Meta Wayfarer, Even G1, XREAL Air 2, Mijia Smart Audio, HUAWEI Eyewear 2 + 일반 안경 비교 |
 | 사진 대조 | 기기 내 WASM 검색. 9개 참조 이미지 기반 실험 기능이며 기종 확률·적발 확률을 계산하지 않음 |

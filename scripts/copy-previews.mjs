@@ -35,6 +35,7 @@ for (const [project, label] of [
     "photo-results",
     "signature-results",
     "name-hints",
+    "browser-guidance",
   ]) {
     const file = files.find(
       (file) => file.includes(project) && path.basename(file) === `${view}.png`,
@@ -57,5 +58,5 @@ await writeFile(
   ),
 );
 console.log(
-  "Published fourteen test screenshots and verification counts. Photo credit: CCadio / CC BY 4.0, cropped. See docs/THIRD_PARTY.md.",
+  "Published sixteen test screenshots and verification counts. Photo credit: CCadio / CC BY 4.0, cropped. See docs/THIRD_PARTY.md.",
 );

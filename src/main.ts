@@ -2,6 +2,7 @@ import "./styles.css";
 import "./photo.css";
 import "./modes.css";
 import "./colors.css";
+import "./browser-support.css";
 import { icon } from "./lib/icons";
 import {
   createReport,
@@ -29,6 +30,7 @@ import { parseSignatureRules } from "./lib/signatures";
 import type { SignatureRuleSet } from "./lib/signatures";
 import { renderSignatureResults } from "./lib/signature-panel";
 import { assessDeviceName } from "./lib/device-hints";
+import { getBrowserSupport } from "./lib/browser-support";
 
 type Page = "wireless" | "optical" | "guide" | "zones" | "records";
 type BrowserDevice = { id: string; name?: string };
@@ -44,6 +46,15 @@ const $$ = <T extends HTMLElement = HTMLElement>(selector: string) => [
 ];
 const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
 const repository = "https://github.com/epoko77-ai/examguard";
+const publicAppUrl = "https://epoko77-ai.github.io/examguard/#wireless";
+const bluetooth = (navigator as BluetoothNavigator).bluetooth;
+const browserSupport = getBrowserSupport({
+  userAgent: navigator.userAgent,
+  maxTouchPoints: navigator.maxTouchPoints,
+  secureContext: window.isSecureContext,
+  hasBluetoothChooser: typeof bluetooth?.requestDevice === "function",
+});
+const bluetoothSupported = browserSupport.supported;
 const nav: {
   page: Page;
   icon: string;
@@ -128,16 +139,26 @@ $("#app").innerHTML = `
     <div class="sidebar-bottom">
       <div class="local-card">${icon("lock")}<strong>이 기기 안에서만</strong><p>영상과 점검 기록을<br>서버로 전송하지 않습니다.</p><span>LOCAL PROCESSING</span></div>
       <button class="sidebar-link" id="help-button">${icon("info")} 사용 가이드 ${icon("arrow")}</button>
+      <button class="sidebar-link" data-browser-help>${icon("phone")} 기기별 접속 안내 ${icon("arrow")}</button>
       <a class="sidebar-link" href="${repository}" target="_blank" rel="noopener noreferrer">${icon("github")} 오픈소스 프로젝트 ${icon("external")}</a>
       <div class="sidebar-version">v0.1.0 <span>MIT LICENSE</span></div>
     </div>
   </aside>
   <div class="workspace">
-    <header class="topbar"><div class="breadcrumb">감독관 도구 <span>/</span> <strong id="breadcrumb-current">무선 기기 확인</strong></div><div class="topbar-right"><span class="connection" id="connection-status"><span class="status-dot"></span> 연결 상태 확인 중</span><button class="button small ghost" id="install-button">${icon("download")}<span>앱 설치</span></button></div></header>
+    <header class="topbar"><div class="breadcrumb">감독관 도구 <span>/</span> <strong id="breadcrumb-current">무선 기기 확인</strong></div><div class="topbar-right"><span class="connection" id="connection-status"><span class="status-dot"></span> 연결 상태 확인 중</span><button class="button small ghost" id="install-button">${icon("download")}<span>홈 화면에 추가</span></button></div></header>
     <main id="main" tabindex="-1">
       <div class="page-heading"><div><div class="eyebrow">A CLEARER VIEW. A FAIRER EXAM.</div><h1 id="page-title">교실 전파 탐색</h1><p id="page-subtitle">${nav[0]!.subtitle}</p></div><button class="button secondary small" id="reset-button">${icon("reset")} 새 점검</button></div>
 
       <section id="page-wireless" class="page-section" aria-label="무선 기기 확인">
+        <aside class="browser-support" id="browser-support" data-supported="${bluetoothSupported}" aria-labelledby="browser-support-title">
+          <div class="eyebrow">접속 안내 · 별도 앱 다운로드 불필요</div>
+          <h2 id="browser-support-title">${esc(browserSupport.title)}</h2>
+          <p>${esc(browserSupport.description)}</p>
+          ${browserSupport.steps.length ? `<ol>${browserSupport.steps.map((step) => `<li>${esc(step)}</li>`).join("")}</ol>` : ""}
+          <div class="button-row">${!bluetoothSupported ? `<button class="button secondary small" data-page="optical">${icon("camera")} B · 광학 검사</button><button class="button secondary small" data-page="guide">${icon("book")} C · 도감·사진 대조</button>` : ""}<button class="button secondary small" id="browser-help" data-browser-help>기기별 여는 방법 ${icon("arrow")}</button><button class="button secondary small" id="copy-app-url">${icon("clipboard")} 앱 주소 복사</button></div>
+          <details id="app-address-details"><summary>앱 주소 보기·직접 복사</summary><label class="app-address">지원 브라우저의 주소창에 붙여넣으세요<input id="app-address" type="text" readonly value="${publicAppUrl}" spellcheck="false" autocapitalize="off"/></label><a class="text-button" href="${publicAppUrl}" target="_blank" rel="noopener noreferrer">공식 앱 새 탭에서 열기 ${icon("external")}</a></details>
+          <p id="browser-copy-message" role="status"></p>
+        </aside>
         <div class="preflight-panel"><div class="section-heading"><h2>${icon("shield")} 점검 전 준비</h2><span class="subtle" id="preflight-count">0 / 3 완료</span></div>
           <div class="preflight-grid">${[
             ["phone", "휴대전화 전원 종료", "잠금·무음 상태와 구분해 확인"],
@@ -328,7 +349,9 @@ function navigate(page: Page, focus = true) {
   }
 }
 document.addEventListener("click", (event) => {
-  const button = (event.target as Element).closest<HTMLElement>("[data-page]");
+  const button = (event.target as Element).closest<HTMLElement>(
+    "button[data-page], a[data-page]",
+  );
   if (button) navigate(button.dataset.page as Page);
 });
 window.addEventListener("hashchange", () =>
@@ -352,10 +375,6 @@ $$("[data-preflight]").forEach((button) =>
     updatePreparation();
   }),
 );
-const bluetooth = (navigator as BluetoothNavigator).bluetooth;
-const bluetoothSupported = Boolean(
-  window.isSecureContext && bluetooth?.requestDevice,
-);
 function renderScan() {
   const isDemo = mode === "demo";
   $("#live-mode").classList.toggle("selected", !isDemo);
@@ -378,7 +397,7 @@ function renderScan() {
   $("#scan-hint").textContent = isDemo
     ? "가상 기기 3개 · 모든 항목에 연습 표시"
     : !bluetoothSupported
-      ? "이 브라우저는 Web Bluetooth를 지원하지 않습니다. 지원 브라우저를 사용하거나 연습 모드로 살펴보세요."
+      ? browserSupport.hint
       : !preflight.every(Boolean)
         ? "위의 준비 항목 3개를 먼저 확인해 주세요."
         : "BLE 기능이 켜져 있어야 합니다. 전체 전파·Wi-Fi·셀룰러 스캐너는 아닙니다.";
@@ -903,9 +922,37 @@ $("#reset-button").addEventListener("click", () => {
     toast("새 점검을 시작했습니다.");
   });
 });
+function showBrowserHelp() {
+  if (dialog.open) dialog.close();
+  openDialog(
+    `<div class="eyebrow">OPEN EXAMGUARD</div><h2 id="dialog-title">어떤 브라우저로 열어야 하나요?</h2><p class="dialog-note"><strong>별도 ExamGuard 앱 다운로드는 필요 없습니다.</strong><br>웹 주소로 바로 사용합니다. ‘홈 화면에 추가’는 선택 사항이며 Bluetooth 지원 여부를 바꾸지 않습니다.</p><div class="browser-guide"><article><h3>Android · Chrome 권장</h3><p>A · Bluetooth 탐색 / B · 광학 검사 / C · 도감 이용</p><ol><li>앱 주소를 복사합니다.</li><li>카카오톡·네이버·SNS 내부 화면에서 나와 <strong>Chrome 앱을 직접 실행</strong>합니다.</li><li>주소창에 붙여넣고 접속합니다.</li><li>휴대전화의 Bluetooth를 켜고 요청되는 권한을 허용합니다. 준비 항목 3개를 확인한 뒤 ‘교실 스캔 시작’을 누릅니다.</li></ol></article><article><h3>iPhone·iPad · Safari로 B·C 이용</h3><p><strong>A · Bluetooth 탐색은 사용할 수 없습니다.</strong> Safari와 일반 iOS용 Chrome 모두 Web Bluetooth를 지원하지 않습니다. 홈 화면에 추가해도 해결되지 않습니다.</p><ol><li>Safari에서 앱 주소를 엽니다.</li><li>‘B · 광학 검사’에서 카메라 권한을 허용하거나 사진을 엽니다. 조명은 기기·브라우저의 지원 여부에 따라 달라집니다.</li><li>‘C · 도감·사진 대조’에서 기종 특징을 비교합니다. 사진 대조는 첫 실행 때 약 104 MB를 받으며 기기 성능에 따라 시간이 걸립니다.</li></ol><p>Bluetooth 탐색이 필요하면 Android의 Chrome 또는 지원되는 PC를 함께 사용하세요.</p></article><article><h3>PC · Chrome 또는 Edge</h3><p>Windows 10/11·macOS: Chrome/Edge<br>Chromebook: Chrome</p><ol><li>지원 브라우저의 주소창에 앱 주소를 붙여넣습니다.</li><li>Bluetooth 어댑터와 설정을 켜고 요청되는 브라우저·OS 권한을 허용합니다.</li></ol><p>Safari·Firefox는 Bluetooth 탐색을 지원하지 않습니다. Linux의 기본 환경도 권장하지 않습니다. 학교 관리 기기는 관리자 정책으로 차단될 수 있습니다.</p></article></div><p class="dialog-note">지원 브라우저에서도 모든 주변 기기가 나타나는 것은 아닙니다. 선택창에서 고른 기기만 앱에 기록됩니다. 기기가 나오지 않는다고 전자기기가 없다는 뜻은 아닙니다.</p><a class="text-button" href="https://developer.chrome.com/docs/capabilities/bluetooth" target="_blank" rel="noopener noreferrer">Chrome 공식 지원 안내 ${icon("external")}</a>`,
+  );
+}
+document.addEventListener("click", (event) => {
+  if ((event.target as Element).closest("[data-browser-help]"))
+    showBrowserHelp();
+});
+$("#copy-app-url").addEventListener("click", async () => {
+  const message = $("#browser-copy-message");
+  try {
+    if (!navigator.clipboard?.writeText)
+      throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(publicAppUrl);
+    message.textContent =
+      "앱 주소를 복사했습니다. 지원 브라우저의 주소창에 붙여넣으세요.";
+  } catch {
+    $<HTMLDetailsElement>("#app-address-details").open = true;
+    const input = $<HTMLInputElement>("#app-address");
+    input.focus();
+    input.select();
+    input.setSelectionRange(0, input.value.length);
+    message.textContent =
+      "자동 복사가 허용되지 않았습니다. 위 주소를 길게 누르거나 선택해 직접 복사하세요.";
+  }
+});
 function showHelp() {
   openDialog(
-    `<div class="eyebrow">QUICK START</div><h2 id="dialog-title">ExamGuard 사용 가이드</h2><ol class="help-steps"><li><strong>휴대전화 전원 종료·전자기기 수거</strong><p>잠금·무음과 전원 종료를 구분하고 허용된 감독 장비를 확인합니다.</p></li><li><strong>Bluetooth 목록에서 기기를 선택</strong><p>지원 브라우저에서 기기를 하나씩 선택합니다. 브라우저가 보여주지 않은 기기나 소유자·RSSI는 알 수 없습니다.</p></li><li><strong>구역과 실물을 확인</strong><p>신호가 의심되면 담당자 절차에 따라 실물을 대조합니다. 광학 필터와 도감은 육안 관찰을 돕습니다.</p></li><li><strong>기록하고 담당자에게 전달</strong><p>확인 구역과 허용 여부를 기록합니다. 최종 판단은 시험 주관기관이 합니다.</p></li></ol><div class="dialog-note"><strong>오프라인 준비</strong><p>인터넷에 연결한 상태에서 앱을 한 번 열고 상단의 ‘기본 도감 오프라인 준비 완료’를 확인하세요. 사진 대조 모델은 첫 대조 때 별도로 내려받습니다. 모델 다운로드와 대조를 마친 뒤 오프라인에서도 시험해 보세요. 브라우저가 캐시를 비우면 재다운로드가 필요합니다. 카메라·Bluetooth 권한과 하드웨어는 별도로 필요합니다. 비행기 모드에서 Bluetooth가 꺼지면 기기 선택은 작동하지 않습니다.</p><strong>기록과 개인정보</strong><p>서버 전송·분석 추적 기능이 없습니다. 기록은 메모리에만 두며 새로고침하면 사라집니다. 내려받은 보고서는 사용자가 직접 관리합니다. 웹 호스팅 제공자의 접속 로그는 별개입니다.</p></div>`,
+    `<div class="eyebrow">QUICK START</div><h2 id="dialog-title">ExamGuard 사용 가이드</h2><p class="dialog-note">다운로드 없이 웹 주소로 사용합니다. BLE 탐색은 Android의 Chrome 또는 Windows·Mac의 Chrome/Edge가 필요합니다. iPhone·iPad에서는 Safari로 광학 검사와 도감을 이용하세요. 홈 화면 설치로 BLE 지원이 추가되지는 않습니다.</p><button class="button secondary small" data-browser-help>기기별 접속 방법 자세히 보기 ${icon("arrow")}</button><ol class="help-steps"><li><strong>휴대전화 전원 종료·전자기기 수거</strong><p>잠금·무음과 전원 종료를 구분하고 허용된 감독 장비를 확인합니다.</p></li><li><strong>Bluetooth 목록에서 기기를 선택</strong><p>지원 브라우저에서 기기를 하나씩 선택합니다. 브라우저가 보여주지 않은 기기나 소유자·RSSI는 알 수 없습니다.</p></li><li><strong>구역과 실물을 확인</strong><p>신호가 의심되면 담당자 절차에 따라 실물을 대조합니다. 광학 필터와 도감은 육안 관찰을 돕습니다.</p></li><li><strong>기록하고 담당자에게 전달</strong><p>확인 구역과 허용 여부를 기록합니다. 최종 판단은 시험 주관기관이 합니다.</p></li></ol><div class="dialog-note"><strong>오프라인 준비</strong><p>인터넷에 연결한 상태에서 앱을 한 번 열고 상단의 ‘기본 도감 오프라인 준비 완료’를 확인하세요. 사진 대조 모델은 첫 대조 때 별도로 내려받습니다. 모델 다운로드와 대조를 마친 뒤 오프라인에서도 시험해 보세요. 브라우저가 캐시를 비우면 재다운로드가 필요합니다. 카메라·Bluetooth 권한과 하드웨어는 별도로 필요합니다. 비행기 모드에서 Bluetooth가 꺼지면 기기 선택은 작동하지 않습니다.</p><strong>기록과 개인정보</strong><p>서버 전송·분석 추적 기능이 없습니다. 기록은 메모리에만 두며 새로고침하면 사라집니다. 내려받은 보고서는 사용자가 직접 관리합니다. 웹 호스팅 제공자의 접속 로그는 별개입니다.</p></div>`,
   );
 }
 $("#help-button").addEventListener("click", showHelp);
@@ -936,7 +983,7 @@ $("#install-button").addEventListener("click", async () => {
     installPrompt = null;
   } else
     openDialog(
-      '<div class="eyebrow">INSTALL EXAMGUARD</div><h2 id="dialog-title">홈 화면에서 바로 열기</h2><p class="dialog-note">Android·데스크톱의 지원 브라우저에서는 메뉴의 ‘앱 설치’를, iPhone·iPad에서는 Safari의 공유 메뉴 → ‘홈 화면에 추가’를 사용하세요. 설치 메뉴는 브라우저와 실행 환경에 따라 다릅니다.</p><p>처음에는 인터넷에 연결해 ‘기본 도감 오프라인 준비 완료’를 확인하세요. 비공개 모드나 저장 공간 정리로 캐시가 사라지면 다시 연결해야 합니다.</p>',
+      '<div class="eyebrow">INSTALL EXAMGUARD</div><h2 id="dialog-title">홈 화면에서 바로 열기</h2><p class="dialog-note"><strong>설치는 선택 사항입니다. 다운로드 없이 웹 주소로 사용할 수 있습니다.</strong><br>홈 화면에 추가해도 브라우저의 Bluetooth 제한은 바뀌지 않습니다. iPhone·iPad에서는 광학 검사와 도감을 이용할 수 있으며 Bluetooth 탐색은 지원하지 않습니다.</p><p>Android·데스크톱의 지원 브라우저에서는 메뉴의 ‘앱 설치’를, iPhone·iPad에서는 Safari의 공유 메뉴 → ‘홈 화면에 추가’를 사용하세요. 설치 메뉴는 브라우저와 실행 환경에 따라 다릅니다.</p><p>처음에는 인터넷에 연결해 ‘기본 도감 오프라인 준비 완료’를 확인하세요. 비공개 모드나 저장 공간 정리로 캐시가 사라지면 다시 연결해야 합니다.</p><button class="button secondary small" data-browser-help>기기별 접속 방법 자세히 보기</button>',
     );
 });
 function updateConnection() {

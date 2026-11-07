@@ -29,6 +29,83 @@ async function report(page: Page) {
   await page.locator("#export-report").click();
   return JSON.parse(await readFile((await (await download).path())!, "utf8"));
 }
+test("unsupported Android gets browser steps, usable alternatives and manual copy fallback", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    });
+    Object.defineProperty(navigator, "userAgent", {
+      value:
+        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36 KAKAOTALK",
+      configurable: true,
+    });
+    Object.defineProperty(navigator, "bluetooth", {
+      value: undefined,
+      configurable: true,
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+    });
+  });
+  await page.goto("./");
+  const support = page.locator("#browser-support");
+  await expect(support).toHaveAttribute("data-supported", "false");
+  await expect(support).toContainText("Android에서는 Chrome 앱으로 열어주세요");
+  await expect(support).toContainText("직접 실행하고 주소창에 붙여넣으세요");
+  for (const button of await page.locator("[data-preflight]").all())
+    await button.click();
+  await expect(page.locator("#scan-button")).toBeDisabled();
+  await page.locator("#copy-app-url").click();
+  await expect(page.locator("#app-address")).toBeVisible();
+  await expect(page.locator("#app-address")).toBeFocused();
+  await expect(page.locator("#app-address")).toHaveValue(
+    "https://epoko77-ai.github.io/examguard/#wireless",
+  );
+  await expect(page.locator("#browser-copy-message")).toContainText(
+    "직접 복사",
+  );
+  await page.locator("#browser-help").click();
+  await expect(page.locator("dialog")).toContainText(
+    "iPhone·iPad · Safari로 B·C 이용",
+  );
+  await expect(page.locator("dialog")).toContainText(
+    "Chrome 모두 Web Bluetooth를 지원하지 않습니다",
+  );
+  await expect(page.locator("dialog")).toContainText(
+    "Windows 10/11·macOS: Chrome/Edge",
+  );
+  await page.locator(".dialog-close").click();
+  await support.locator('[data-page="optical"]').click();
+  await expect(page.locator("#page-title")).toHaveText(
+    "교탁 위 정밀 광학 판독",
+  );
+  await go(page, "wireless");
+  await support.locator('[data-page="guide"]').click();
+  await expect(page.locator(".guide-card")).toHaveCount(6);
+  await page.locator("#install-button").click();
+  await expect(page.locator("dialog")).toContainText(
+    "브라우저의 Bluetooth 제한은 바뀌지 않습니다",
+  );
+  await page.locator("dialog [data-browser-help]").click();
+  await expect(page.locator("#dialog-title")).toHaveText(
+    "어떤 브라우저로 열어야 하나요?",
+  );
+  await page.locator(".dialog-close").click();
+  await go(page, "wireless");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+  await takeShot(page, {
+    path: testInfo.outputPath("browser-guidance.png"),
+    fullPage: true,
+  });
+});
 test("core UI, preflight, training records, catalog, mobile layout and offline reload", async ({
   page,
   context,
@@ -40,6 +117,17 @@ test("core UI, preflight, training records, catalog, mobile layout and offline r
   await page.goto("./");
   await expect(page.locator("#page-title")).toHaveText("교실 전파 탐색");
   await expect(page.locator(".primary-nav .nav-item")).toHaveCount(3);
+  if (testInfo.project.name === "webkit-mobile") {
+    await expect(page.locator("#browser-support-title")).toContainText(
+      "iPhone·iPad에서는 Bluetooth 탐색을 사용할 수 없습니다",
+    );
+    await expect(page.locator("#browser-support")).toContainText(
+      "홈 화면에 추가하거나 웹앱을 내려받아도 이 제한은 해결되지 않습니다",
+    );
+    await expect(
+      page.locator('#browser-support [data-page="optical"]'),
+    ).toBeVisible();
+  }
   await page.locator("#ble-help").click();
   await expect(page.locator("dialog")).toContainText(
     "페어링 상대나 외부 인터넷 사용 여부",
