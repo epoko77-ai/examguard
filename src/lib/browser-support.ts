@@ -29,9 +29,14 @@ export function getBrowserSupport(environment: BrowserEnvironment) {
     return {
       platform,
       supported,
-      title: "이 브라우저는 Bluetooth 기기 선택을 지원합니다",
+      title:
+        platform === "ios"
+          ? "iPhone·iPad의 BLE 선택 기능 확인 · 호환성 시험"
+          : "이 브라우저는 Bluetooth 기기 선택을 지원합니다",
       description:
-        "별도 앱 다운로드 없이 사용할 수 있습니다. Bluetooth를 켜고 요청되는 권한을 허용하세요. 실제 탐색에는 사용 가능한 Bluetooth 어댑터가 필요합니다.",
+        platform === "ios"
+          ? "브라우저의 Bluetooth 선택 기능이 확인됐습니다. Bluefy 등 별도 iOS 브라우저와 ExamGuard의 실기기 호환성은 아직 검증하지 않았습니다. Bluetooth를 켜고 요청되는 권한을 허용한 뒤 시험해 보세요."
+          : "별도 ExamGuard 앱 다운로드 없이 사용할 수 있습니다. Bluetooth를 켜고 요청되는 권한을 허용하세요. 실제 탐색에는 사용 가능한 Bluetooth 어댑터가 필요합니다.",
       hint: "위의 준비 항목 3개를 확인한 뒤 기기 선택창을 여세요.",
       steps: [] as string[],
     };
@@ -39,13 +44,15 @@ export function getBrowserSupport(environment: BrowserEnvironment) {
     return {
       platform,
       supported,
-      title: "iPhone·iPad에서는 Bluetooth 탐색을 사용할 수 없습니다",
+      title: "현재 iPhone·iPad 브라우저에서는 BLE 탐색을 지원하지 않습니다",
       description:
-        "Safari와 일반 iPhone·iPad용 Chrome은 Web Bluetooth를 지원하지 않습니다. 홈 화면에 추가하거나 웹앱을 내려받아도 이 제한은 해결되지 않습니다.",
-      hint: "아이폰에서는 B·C 모드를 이용하세요. BLE 탐색은 Android의 Chrome 또는 지원되는 PC가 필요합니다.",
+        "Safari와 일반 iPhone·iPad용 Chrome은 Web Bluetooth를 지원하지 않습니다. 홈 화면에 추가해도 이 제한은 해결되지 않습니다. 별도 Bluefy 브라우저에서는 BLE 탐색을 시도할 수 있습니다.",
+      hint: "iPhone: Bluefy에서 BLE 탐색을 시도할 수 있습니다(실기기 미검증). Safari에서는 B·C 모드를 이용하세요.",
       steps: [
-        "Safari에서 이 주소를 열면 광학 검사·사진 대조·도감을 사용할 수 있습니다.",
-        "Bluetooth 탐색은 Android의 Chrome 또는 Windows·Mac의 Chrome/Edge에서 이 주소를 여세요.",
+        "아래 App Store 링크에서 Bluefy를 설치하고 ‘앱 주소 복사’를 누르세요.",
+        "Bluefy 앱을 직접 실행해 주소창에 붙여넣으세요. Bluetooth를 켜고 Bluefy의 Bluetooth 권한을 허용하세요.",
+        "준비 항목 3개를 확인한 뒤 ‘교실 스캔 시작’을 누르세요. ExamGuard와의 실기기 호환성은 아직 검증하지 않았습니다.",
+        "광학 검사·도감은 Safari에서 이용할 수 있습니다. BLE 탐색이 작동하지 않으면 Android의 Chrome 또는 지원 PC를 이용하세요.",
       ],
     };
   if (!secureContext)

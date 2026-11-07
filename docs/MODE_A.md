@@ -4,7 +4,9 @@
 
 별도 다운로드 없이 [앱 주소](https://epoko77-ai.github.io/examguard/#wireless)로 사용합니다. **Android는 Chrome 앱을 직접 실행**하고, Windows 10/11·macOS는 Chrome 또는 Edge, Chromebook은 Chrome으로 여세요. Bluetooth 어댑터·설정과 요청되는 권한이 필요합니다. 카카오톡·네이버 등 내부 브라우저에서 열었다면 주소를 복사해 Chrome 주소창에 붙여넣으세요.
 
-**iPhone·iPad의 Safari와 일반 iOS용 Chrome은 Web Bluetooth를 지원하지 않습니다.** 홈 화면에 설치해도 모드 A를 사용할 수 없습니다. Safari에서 B·광학 검사와 C·도감을 이용하고, BLE 탐색에는 Android 또는 지원 PC를 사용하세요. Safari·Firefox와 Linux 기본 환경은 BLE 탐색용으로 권장하지 않습니다. [자세한 기기별 접속 안내](../README.md#어떤-기기브라우저로-열어야-하나요) · [Chrome 공식 지원 환경](https://developer.chrome.com/docs/capabilities/bluetooth) · [MDN 호환성](https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API#browser_compatibility)
+**iPhone·iPad의 Safari와 일반 iOS용 Chrome은 Web Bluetooth를 지원하지 않습니다.** 홈 화면에 설치해도 모드 A를 사용할 수 없습니다. Safari에서 B·광학 검사와 C·도감을 이용할 수 있습니다. iPhone의 BLE 대안으로는 별도 Bluefy 브라우저가 있습니다. Safari·Firefox와 Linux 기본 환경은 BLE 탐색용으로 권장하지 않습니다. [자세한 기기별 접속 안내](../README.md#어떤-기기브라우저로-열어야-하나요) · [Chrome 공식 지원 환경](https://developer.chrome.com/docs/capabilities/bluetooth) · [MDN 호환성](https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API#browser_compatibility)
+
+**Bluefy 시험 경로:** [App Store에서 설치](https://apps.apple.com/kr/app/bluefy-web-ble-browser/id1492822055) → Bluefy 앱 실행 → ExamGuard 주소 붙여넣기 → Bluetooth 켜기·권한 허용 → 준비 항목 확인 → 교실 스캔 시작. [개발사의 Web Bluetooth 지원 안내](https://bluefy.app/guide.html)는 확인했지만, **ExamGuard의 `acceptAllDevices` 선택창 및 실제 iPhone·Bluefy·스마트안경 조합은 아직 검증하지 않았습니다.** Android/PC 대안과 구분해 실험적 경로로 안내합니다. iOS 기기 자체의 BLE 스캔 불가능을 의미하지 않습니다.
 
 앱은 HTTPS 보안 환경과 실제 `navigator.bluetooth.requestDevice` 존재 여부로 버튼 사용 가능 여부를 정합니다. 기기 종류는 접속 안내에만 사용하며, UA 문자열만으로 탐색 성공을 보장하지 않습니다.
 

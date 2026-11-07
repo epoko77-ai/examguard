@@ -15,13 +15,16 @@
 | 사용 기기 | 여는 브라우저 | A · Bluetooth 탐색 | B · 광학 검사 / C · 도감 |
 | --- | --- | --- | --- |
 | Android 휴대전화 | **Chrome 앱을 직접 실행** | 지원 환경에서 이용 | 이용 가능 |
-| iPhone·iPad | **Safari** | **미지원. 일반 iOS용 Chrome도 동일** | 이용 가능 |
+| iPhone·iPad | **Safari** | **기본 미지원. 일반 iOS용 Chrome도 동일** | 이용 가능 |
+| iPhone·iPad · BLE 대안 | **Bluefy 별도 설치** | 시도 가능한 실험적 경로. **ExamGuard 실기기 호환성 미검증** | Safari 이용 권장 |
 | Windows 10/11·macOS | **Chrome 또는 Edge** | Bluetooth 어댑터·권한 필요 | 이용 가능 |
 | Chromebook | **Chrome** | Bluetooth 어댑터·권한 필요 | 이용 가능 |
 
 - **Android:** 카카오톡·네이버·SNS 안에서 열린 화면이라면 주소 복사 → Chrome 앱 실행 → 주소창에 붙여넣기 → Bluetooth 켜기 → 요청되는 권한 허용 → 준비 항목 3개 확인 → **교실 스캔 시작**.
-- **iPhone·iPad:** Safari에서 접속 → **B · 광학 검사**에서 카메라 권한 허용 또는 사진 열기 → **C · 도감·사진 대조**. Bluetooth 탐색이 필요하면 Android 또는 지원 PC를 함께 사용하세요. **Safari로 변경하거나 홈 화면에 설치하는 것으로 BLE 기능이 생기지는 않습니다.**
+- **iPhone·iPad:** Safari에서 접속 → **B · 광학 검사**에서 카메라 권한 허용 또는 사진 열기 → **C · 도감·사진 대조**. Bluetooth 탐색은 **별도 Bluefy 브라우저로 시도**할 수 있습니다. **Safari로 변경하거나 홈 화면에 설치하는 것으로 BLE 기능이 생기지는 않습니다.**
 - **PC:** 지원 브라우저에서 HTTPS 주소를 열고 Bluetooth 설정과 어댑터를 확인합니다. Safari·Firefox는 BLE 탐색을 지원하지 않습니다. Linux의 기본 환경도 권장하지 않습니다.
+
+**아이폰에서 BLE 탐색을 시도하는 순서:** [Bluefy 설치(App Store)](https://apps.apple.com/kr/app/bluefy-web-ble-browser/id1492822055) → Bluefy 앱 직접 실행 → ExamGuard 주소 붙여넣기 → Bluetooth 켜기·Bluefy 권한 허용 → 준비 항목 3개 확인 → **교실 스캔 시작**. Bluefy의 Web Bluetooth 제공은 [개발사 공식 안내](https://bluefy.app/guide.html)에서 확인했습니다. **ExamGuard와 실제 iPhone/Bluefy에서의 선택창·광고 탐색·사진 대조 동작은 아직 검증하지 않았습니다.** 앱은 실제 API가 제공되면 iOS라는 이유로 막지 않으며, 기기 선택 성공이나 전체 기기 발견을 보장하지 않습니다. 동작하지 않으면 Android Chrome 또는 지원 PC를 이용하세요. Bluefy는 제3자 브라우저이며 별도 이용·개인정보 정책을 적용합니다.
 
 카메라 조명은 기기별 지원 여부가 다르며, 사진 대조는 첫 실행 때 약 104 MB를 내려받습니다. 앱은 실제 Bluetooth API 제공 여부를 확인해 접속 안내와 대체 기능을 표시합니다. 지원 브라우저라도 학교 관리 정책·하드웨어·권한 때문에 탐색이 제한될 수 있습니다. [Chrome 공식 지원 환경](https://developer.chrome.com/docs/capabilities/bluetooth) · [MDN 호환성](https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API#browser_compatibility)
 
@@ -117,7 +120,7 @@ ExamGuard는 위 탐지 프로젝트의 포크가 아니며, 해당 코드를 �
 | 환경/기능 | 현재 범위 |
 | --- | --- |
 | 모드 A · Android/PC | Android Chrome, Windows 10/11·macOS Chrome/Edge, ChromeOS Chrome 권장. HTTPS 또는 localhost·Bluetooth 어댑터·권한 필요 |
-| 모드 A · iPhone/iPad | Safari·일반 iOS Chrome에서 Web Bluetooth 미지원. 홈 화면 설치로 해결되지 않음. B·C 모드와 외부 측정 파일 비교 이용 |
+| 모드 A · iPhone/iPad | Safari·일반 iOS Chrome의 기본 Web Bluetooth 미지원. Bluefy로 시도 가능한 실험적 경로 제공(실기기 호환성 미검증). 홈 화면 설치만으로 해결되지 않음 |
 | 모드 B | 카메라 권한 필요. 조명은 기기별 지원 여부 확인. 필터는 육안 관찰 보조이며 핀홀·HUD 자동 검출 기능 아님 |
 | 모드 C | Meta Wayfarer, Even G1, XREAL Air 2, Mijia Smart Audio, HUAWEI Eyewear 2 + 일반 안경 비교 |
 | 사진 대조 | 기기 내 WASM 검색. 9개 참조 이미지 기반 실험 기능이며 기종 확률·적발 확률을 계산하지 않음 |

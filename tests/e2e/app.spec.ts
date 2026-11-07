@@ -119,10 +119,17 @@ test("core UI, preflight, training records, catalog, mobile layout and offline r
   await expect(page.locator(".primary-nav .nav-item")).toHaveCount(3);
   if (testInfo.project.name === "webkit-mobile") {
     await expect(page.locator("#browser-support-title")).toContainText(
-      "iPhone·iPad에서는 Bluetooth 탐색을 사용할 수 없습니다",
+      "현재 iPhone·iPad 브라우저에서는 BLE 탐색을 지원하지 않습니다",
     );
     await expect(page.locator("#browser-support")).toContainText(
-      "홈 화면에 추가하거나 웹앱을 내려받아도 이 제한은 해결되지 않습니다",
+      "홈 화면에 추가해도 이 제한은 해결되지 않습니다",
+    );
+    await expect(page.locator("#bluefy-install")).toHaveAttribute(
+      "href",
+      "https://apps.apple.com/kr/app/bluefy-web-ble-browser/id1492822055",
+    );
+    await expect(page.locator("#browser-support")).toContainText(
+      "실기기 호환성은 아직 검증하지 않았습니다",
     );
     await expect(
       page.locator('#browser-support [data-page="optical"]'),

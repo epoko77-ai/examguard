@@ -20,7 +20,9 @@ test("iPhone Safari, iOS Chrome and desktop-style iPad all get the iOS limitatio
     const support = getBrowserSupport({ ...environment, userAgent });
     assert.equal(support.platform, "ios", userAgent);
     assert.equal(support.supported, false);
-    assert.match(support.title, /iPhone·iPad/);
+    assert.match(support.title, /현재 iPhone·iPad 브라우저/);
+    assert.match(support.steps.join(" "), /Bluefy.*설치/);
+    assert.match(support.steps.join(" "), /실기기 호환성.*아직 검증하지/);
     assert.match(support.description, /Chrome.*지원하지 않습니다/);
     assert.match(support.description, /홈 화면.*해결되지 않습니다/);
   }
@@ -40,6 +42,14 @@ test("API availability and secure context control access, never the browser name
     getBrowserSupport({ ...environment, hasBluetoothChooser: true }).supported,
     true,
   );
+  assert.match(
+    getBrowserSupport({
+      ...environment,
+      userAgent: "iPhone Bluefy",
+      hasBluetoothChooser: true,
+    }).description,
+    /실기기 호환성.*아직 검증하지/,
+  );
   const insecure = getBrowserSupport({
     ...environment,
     hasBluetoothChooser: true,
@@ -51,7 +61,7 @@ test("API availability and secure context control access, never the browser name
   assert.equal(
     getBrowserSupport({
       ...environment,
-      userAgent: "iPhone",
+      userAgent: "iPhone Bluefy",
       hasBluetoothChooser: true,
     }).supported,
     true,
