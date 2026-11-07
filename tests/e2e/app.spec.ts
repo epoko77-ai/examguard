@@ -215,6 +215,77 @@ test("radio imports reject invalid data, show repeated-zone evidence and stay se
   await expect(page.locator(".signal-conclusion strong")).toHaveText("A");
   expect((await report(page)).radioCapture.samples).toHaveLength(7);
 });
+test("compound filters explain matches, separate same-company products and exclude demonstration rules from live reports", async ({
+  page,
+}, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("./#zones");
+  await page.locator("#signature-demo").click();
+  await expect(page.locator(".signature-card.matched")).toHaveCount(1);
+  await expect(page.locator(".signature-card.company-only")).toHaveCount(1);
+  await expect(page.locator(".signature-card.unmatched")).toHaveCount(1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+  await takeShot(page, {
+    path: testInfo.outputPath("signature-results.png"),
+    fullPage: true,
+  });
+  const demoReport = await report(page);
+  expect(demoReport.radioCapture).toBeNull();
+  expect(demoReport.signatureAnalysis).toBeNull();
+  await go(page, "zones");
+  // Exercise the non-demo code path with synthetic fixtures, never real identifiers.
+  const capture = JSON.parse(
+    await readFile("public/radio-advertisement-example.json", "utf8"),
+  );
+  capture.isDemo = false;
+  const upload = (selector: string, data: unknown) =>
+    page.locator(selector).setInputFiles({
+      name: "synthetic-test.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(data)),
+    });
+  await upload("#radio-input", capture);
+  await expect(page.locator(".signature-card.demo-blocked")).toHaveCount(3);
+  expect((await report(page)).signatureAnalysis).toBeNull();
+  await go(page, "zones");
+  const rules = JSON.parse(
+    await readFile("public/signature-example.json", "utf8"),
+  );
+  rules.isDemo = false;
+  rules.rules[0].label = '<img src=x onerror="window.injected=1">';
+  await upload("#signature-input", rules);
+  await expect(page.locator(".signature-card.matched")).toContainText(
+    rules.rules[0].label,
+  );
+  await expect(page.locator("#signature-results img")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).injected)).toBeUndefined();
+  const exported = await report(page);
+  expect(
+    exported.signatureAnalysis.results.map((r: { status: string }) => r.status),
+  ).toEqual(["matched", "company-only", "unmatched"]);
+  expect(exported.signatureAnalysis.rules.rules[0].payload).toEqual(
+    rules.rules[0].payload,
+  );
+  await go(page, "zones");
+  await page.locator("#signature-clear").click();
+  rules.rules[0].payload.mask.fill(0);
+  await upload("#signature-input", rules);
+  await expect(page.locator("#signature-message")).toContainText("마스크");
+  await expect(page.locator(".signature-card.no-rules")).toHaveCount(3);
+  await page.locator("#signature-demo").click();
+  await expect(page.locator(".signature-card.matched")).toHaveCount(1);
+  await page.locator("#reset-button").click();
+  await page.locator("#confirm-reset").click();
+  await go(page, "zones");
+  await expect(page.locator(".signature-card")).toHaveCount(0);
+  await expect(page.locator("#signature-clear")).toBeDisabled();
+  expect(errors).toEqual([]);
+});
 test("photo search runs real local WASM, returns catalog candidates and works offline after caching", async ({
   page,
   context,

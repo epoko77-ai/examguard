@@ -1,3 +1,6 @@
+import { analyzeSignatures, parseAdvertisement } from "./signatures.ts";
+import type { Advertisement, SignatureRuleSet } from "./signatures.ts";
+
 export type Zone =
   "미지정" | "교탁" | "창가" | "가운데" | "복도 쪽" | "교실 밖";
 export const ZONES: Zone[] = [
@@ -40,9 +43,10 @@ export interface RadioSample {
   zone: string;
   rssi: number;
   timestamp: string;
+  advertisement?: Advertisement;
 }
 export interface RadioCapture {
-  schema: "examguard.radio.v1";
+  schema: "examguard.radio.v1" | "examguard.radio.v2";
   source: string;
   isDemo: boolean;
   samples: RadioSample[];
@@ -94,7 +98,9 @@ export function parseRadioCapture(raw: string): RadioCapture {
   }
   if (
     !isObject(parsed) ||
-    parsed.schema !== "examguard.radio.v1" ||
+    !["examguard.radio.v1", "examguard.radio.v2"].includes(
+      String(parsed.schema),
+    ) ||
     !validString(parsed.source, 80) ||
     typeof parsed.isDemo !== "boolean" ||
     !Array.isArray(parsed.samples) ||
@@ -102,7 +108,7 @@ export function parseRadioCapture(raw: string): RadioCapture {
     parsed.samples.length > 5000
   ) {
     throw new Error(
-      "examguard.radio.v1 형식, source, isDemo, 1~5,000개 samples가 필요합니다.",
+      "examguard.radio.v1 또는 v2 형식, source, isDemo, 1~5,000개 samples가 필요합니다.",
     );
   }
   const samples: RadioSample[] = parsed.samples.map(
@@ -130,6 +136,10 @@ export function parseRadioCapture(raw: string): RadioCapture {
         zone: sample.zone,
         rssi: sample.rssi,
         timestamp: sample.timestamp,
+        ...(parsed.schema === "examguard.radio.v2" &&
+        sample.advertisement !== undefined
+          ? { advertisement: parseAdvertisement(sample.advertisement) }
+          : {}),
       };
     },
   );
@@ -142,7 +152,7 @@ export function parseRadioCapture(raw: string): RadioCapture {
     );
   }
   return {
-    schema: "examguard.radio.v1",
+    schema: parsed.schema as RadioCapture["schema"],
     source: parsed.source,
     isDemo: parsed.isDemo,
     samples,
@@ -186,6 +196,7 @@ export function createReport(
   devices: DeviceRecord[],
   inspections: Inspection[],
   capture: RadioCapture | null,
+  rules: SignatureRuleSet | null = null,
 ) {
   return {
     schema: "examguard.report.v1",
@@ -208,12 +219,26 @@ export function createReport(
       })),
     inspections: inspections.filter((i) => i.source !== "demo"),
     radioCapture: capture && !capture.isDemo ? capture : null,
+    signatureAnalysis:
+      capture?.schema === "examguard.radio.v2" &&
+      !capture.isDemo &&
+      rules &&
+      !rules.isDemo
+        ? {
+            engine: "examguard.signature-engine.v1",
+            rules,
+            results: analyzeSignatures(capture, rules),
+            basis:
+              "User-provided rules; conjunction within one advertisement. A match is not a validated device identification or activity verdict.",
+          }
+        : null,
     limitations: [
       "Not a misconduct verdict or proof of absence.",
       "Device names are self-reported and do not establish device type or owner.",
       "Browser selections do not provide room-wide scanning or RSSI.",
       "Imported measurements are user-provided; RSSI cannot establish a seat or an owner.",
-      "Training records are excluded. No images or Bluetooth device IDs are included.",
+      "Training records are excluded. No images or browser-issued Bluetooth device IDs are included. Imported advertisement payloads may contain identifying bytes.",
+      "Signature results compare user-provided advertisements and rules. Company ID alone never promotes a device candidate; Wi-Fi traffic and optical lens detection are not analyzed.",
     ],
   };
 }

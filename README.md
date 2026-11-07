@@ -6,7 +6,7 @@
 
 [웹앱 사용하기](https://epoko77-ai.github.io/examguard/#wireless) · [모드 A와 제조사 코드 설명](docs/MODE_A.md) · [기존 도구 연결 구조](docs/INTEGRATIONS.md) · [기여하기](CONTRIBUTING.md)
 
-> **현재 상태:** 작동하는 웹 프로토타입입니다. 브라우저 BLE 기기 선택·기록, 광학 검사, 사진 도감 검색, 외부 RSSI 파일 비교를 제공합니다. 교실 전체의 광고 패킷 자동 수집, 페어링/인터넷 사용 판별, 제조사 시그니처 자동 분류는 아직 구현하지 않았습니다.
+> **현재 상태:** 작동하는 웹 프로토타입입니다. 브라우저 BLE 기기 선택·기록, 광학 검사, 사진 도감 검색, 외부 RSSI 비교와 **광고 패킷 복합 필터**를 제공합니다. 복합 필터는 가져온 회사 ID·UUID·바이트를 사용자가 제공한 규칙으로 대조합니다. 실기기로 검증한 기본 규칙, 교실 전체 광고 자동 수집, 페어링/인터넷 사용 판별은 아직 없습니다.
 
 ![ExamGuard 모드 A: 교실 전파 탐색 화면](https://epoko77-ai.github.io/examguard/previews/desktop-wireless.png)
 
@@ -28,7 +28,7 @@
 | **B · 교탁 위 정밀 광학 판독** | 기관 절차에 따라 제출된 안경의 작은 부품을 가까이 살펴봅니다. | 후면 카메라·사진, 반사 강조/윤곽/반전 필터, 확대, 화면 정지, 지원 장비의 조명. 카메라·충전부·스피커·렌즈 구조를 직접 관찰 |
 | **C · 3초 실물 도감** | 발견한 안경의 기종 후보를 좁히고 공식 자료와 대조합니다. | 5개 제품군과 일반 안경 비교, 부품별 도식·설명·공식 링크. 사진 촬영/선택으로 닮은 후보 3개 검색 |
 
-구역별 신호 비교와 점검 기록은 이 세 모드를 잇는 보조 도구입니다. 교실 탐색에서 얻은 단서를 교탁 위 검사와 기종 대조로 확인한 뒤, 관찰 사실을 보고서로 남기는 것이 전체 사용 흐름입니다.
+구역별 신호 비교·광고 패킷 복합 필터·점검 기록은 이 세 모드를 잇는 보조 도구입니다. 교실 탐색에서 얻은 단서를 교탁 위 검사와 기종 대조로 확인한 뒤, 관찰 사실을 보고서로 남기는 것이 전체 사용 흐름입니다.
 
 ```mermaid
 flowchart LR
@@ -57,7 +57,7 @@ const device = await navigator.bluetooth.requestDevice({
 
 **BLE 신호가 보인다는 사실, 스마트폰과 페어링됐다는 사실, 외부 인터넷을 쓰고 있다는 사실은 서로 다릅니다.** 현재 웹앱은 페어링 상대·Wi-Fi/셀룰러 연결·인터넷 통신 내용·소유자를 알아내지 못합니다.
 
-제조사 코드 기반 1차 분류는 중요한 확장 방향입니다. 다만 `optionalManufacturerData`는 제조사 데이터 **접근 권한 범위**를 지정하는 옵션입니다. 선택창의 검색 조건은 `filters[].manufacturerData`이며, 회사 ID에 맞는 광고를 걸러도 그것만으로 스마트안경·휴대전화·이어폰을 확정할 수 없습니다. 검증한 광고 패턴·서비스 UUID·실물 데이터가 함께 필요합니다. [API 역할과 코드 검증 상태](docs/MODE_A.md)
+외부 수신기 자료에는 회사 ID·UUID·바이트를 함께 대조하는 복합 필터를 적용할 수 있습니다. [입력·규칙 형식](docs/SIGNATURES.md)을 확인하세요. 브라우저 선택 기록 자체에는 이 원자료가 없습니다. 다만 `optionalManufacturerData`는 제조사 데이터 **접근 권한 범위**를 지정하는 옵션입니다. 선택창의 검색 조건은 `filters[].manufacturerData`이며, 회사 ID에 맞는 광고를 걸러도 그것만으로 스마트안경·휴대전화·이어폰을 확정할 수 없습니다. 검증한 광고 패턴·서비스 UUID·실물 데이터가 함께 필요합니다. [API 역할과 코드 검증 상태](docs/MODE_A.md)
 
 ## 기존 오픈소스를 어떻게 보완하나요?
 
@@ -67,19 +67,20 @@ const device = await navigator.bluetooth.requestDevice({
 | [MetaDetect](https://github.com/Metrix187/metadetect) | 회사 ID·서비스 UUID·이름 패턴을 사용하는 웹/ESP32 탐지 접근 | 시험장별 관찰 절차와 기록을 제공하고, 탐지 근거를 실물 대조로 확인. 브라우저 실험 기능과 일반 지원 범위 구분 |
 | [BLE-Scanner](https://github.com/BenGeorgie55/BLE-Scanner) | ESP32 기반 주변 BLE 측정 | 별도 수신기의 측정값을 구역·시각과 함께 받아 반복 측정 중앙값으로 비교 |
 
-**현재 연결된 범위는 명확합니다.** 외부 수신기 자료를 `examguard.radio.v1` 형식으로 변환하면 앱에서 가져와 비교하고 보고서에 포함할 수 있습니다. 특정 프로젝트의 원본 로그를 바로 읽는 어댑터나 실시간 연결은 아직 없습니다. 광고 패킷·제조사·UUID를 자동 분류하는 공통 계층도 다음 구현 범위입니다.
+**현재 연결된 범위는 명확합니다.** 외부 수신기 자료를 `examguard.radio.v1`(RSSI) 또는 `examguard.radio.v2`(RSSI + 광고 원자료)로 변환하면 앱에서 비교하고 보고서에 포함할 수 있습니다. v2에는 **회사 ID·필수 UUID·마스크 바이트 조건이 같은 광고에서 모두 맞아야 후보로 표시하는 규칙 엔진**을 구현했습니다. 특정 프로젝트의 원본 로그를 바로 읽는 어댑터, 실시간 연결, 검증된 실기기 규칙 묶음은 아직 없습니다.
 
 ExamGuard는 위 탐지 프로젝트의 포크가 아니며, 해당 코드를 현재 앱에 내장하지 않았습니다. 접근 방식과 한계를 검토하고 시험장용 웹 흐름을 독립 구현했습니다. 실제 사진 검색에는 **Transformers.js와 ONNX Runtime Web**을 결합했습니다. 각 프로젝트의 공로와 라이선스를 존중하며, 앞으로 코드를 통합할 때는 해당 라이선스를 별도로 준수합니다. [연결 구조와 현재/향후 경계](docs/INTEGRATIONS.md)
 
 지금 보완한 부분은 다음과 같습니다.
 
+- **회사 ID만으로 분류하지 않기:** 외부 자료의 복합 조건을 대조하고, 회사만 일치·규칙 불일치·자료 부족을 구분합니다. 규칙 출처와 일치 근거를 표시하고 연습 규칙으로 현장 자료를 판정하지 않습니다.
 - **시험장 준비를 먼저:** 휴대전화 전원 종료·전자기기 수거·허용 장비 확인을 거친 뒤 BLE 점검을 시작합니다.
 - **탐색에서 실물 확인까지:** A·B·C 모드를 연결하고 안경의 부품 위치와 공식 자료를 함께 제공합니다.
 - **관찰 근거를 남기기:** 수신기가 측정한 구역과 실물 확인 상태를 기록합니다. 이름·RSSI만으로 소유자나 좌석을 만들지 않습니다.
 - **현장·연습 자료 구분:** 연습 기기와 도식 관찰은 실제 보고서에서 제외합니다.
 - **기기 안에서 처리:** 촬영 사진은 외부 AI 서버에 보내지 않습니다. 기본 도감·앱은 사전 캐시 후 오프라인으로 사용할 수 있습니다.
 
-이는 워크플로와 검증 방식의 보완입니다. 기존 프로젝트보다 탐지율이 높다는 비교 실험 결과를 주장하지 않습니다.
+이는 필터 조건·워크플로·검증 방식의 보완입니다. **실제 오탐 감소율이나 기존 프로젝트보다 높은 탐지율은 아직 검증하지 않았습니다.** 현재 예제는 가상의 규칙입니다. BLE와 Wi-Fi P2P 트래픽 결합, YOLO 카메라 홀 검출은 미구현입니다. [세 가지 개선 제안의 구현 상태](docs/DETECTION_ROADMAP.md)에서 구분해 공개합니다.
 
 ## 현장에서 사용하는 순서
 
@@ -128,6 +129,7 @@ npm run test:e2e
 
 - `src/main.ts`: 세 가지 현장 모드, BLE 선택, 점검 흐름
 - `src/lib/core.ts`: 기록·보고서·외부 측정 파일 검증
+- `src/lib/signatures.ts`: 회사 ID·UUID·마스크 바이트 복합 규칙 대조
 - `src/lib/optical.ts`: 카메라·조명·필터와 자원 해제
 - `src/data/guides.ts`: 도감·관찰 위치·공식 근거
 - `src/lib/photo-worker.ts`: Transformers.js / ONNX Runtime Web 사진 검색
@@ -149,4 +151,4 @@ npm run test:e2e
 
 ---
 
-**English:** ExamGuard is an open-source prototype for exam proctors investigating possible smart-glasses misuse. Its workflow starts with remaining wireless-device clues after phone shutdown and collection, then moves to tabletop optical inspection, a quick physical field guide, and factual records. Existing BLE detection projects inform the approach; ExamGuard adds an exam workflow and a normalized RSSI import interface. It does not currently embed those projects, collect all advertisements, detect pairing/internet use, or automatically classify manufacturer signatures. Its photo search runs locally with Transformers.js and ONNX Runtime Web.
+**English:** ExamGuard is an open-source prototype for exam proctors investigating possible smart-glasses misuse. Its workflow starts with remaining wireless-device clues after phone shutdown and collection, then moves to tabletop optical inspection, a quick physical field guide, and factual records. Existing BLE detection projects inform the approach; ExamGuard adds an exam workflow, normalized RSSI/advertisement imports and a compound company-ID + UUID + masked-payload rule engine. It does not embed those projects, collect all advertisements or detect pairing/internet use. The rule engine works on user-provided data; no field-validated device rules or accuracy claims are bundled. Its photo search runs locally with Transformers.js and ONNX Runtime Web.

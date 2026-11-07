@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "description": "Offline-first smart glasses inspection companion for exam proctors.",
+  "description": "Exam smart-glasses inspection: BLE clues, compound advertisement rules, tabletop optics and a physical field guide.",
   "engines": {
     "node": ">=22.18.0"
   },
@@ -13,7 +13,7 @@
     "check": "tsc --noEmit",
     "build": "npm run check && vite build && node scripts/build-sw.mjs",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --experimental-strip-types --test tests/core.test.ts",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "setup:models": "node scripts/setup-models.mjs",
     "build:references": "node scripts/build-references.mjs",

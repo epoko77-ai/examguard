@@ -1,6 +1,7 @@
 import "./styles.css";
 import "./photo.css";
 import "./modes.css";
+import "./colors.css";
 import { icon } from "./lib/icons";
 import {
   createReport,
@@ -24,6 +25,9 @@ import type { OpticalState } from "./lib/optical";
 import { FILTER_LABELS } from "./lib/filters";
 import type { Filter } from "./lib/filters";
 import { guides, observationLabels } from "./data/guides";
+import { parseSignatureRules } from "./lib/signatures";
+import type { SignatureRuleSet } from "./lib/signatures";
+import { renderSignatureResults } from "./lib/signature-panel";
 
 type Page = "wireless" | "optical" | "guide" | "zones" | "records";
 type BrowserDevice = { id: string; name?: string };
@@ -95,6 +99,7 @@ let mode: "live" | "demo" = "live";
 let devices: DeviceRecord[] = [];
 let inspections: Inspection[] = [];
 let radioCapture: RadioCapture | null = null;
+let signatureRules: SignatureRuleSet | null = null;
 let pendingBluetooth = false;
 let sessionGeneration = 0;
 let cameraState: OpticalState = {
@@ -165,7 +170,7 @@ $("#app").innerHTML = `
             )
             .join(
               "",
-            )}</ol><button class="button secondary full" data-page="optical">${icon("camera")} 광학 검사 열기 ${icon("arrow")}</button></article>
+            )}</ol><button class="button secondary full" data-page="optical">${icon("camera")} 교탁 위 광학 판독 ${icon("arrow")}</button><button class="button secondary full signature-shortcut" data-page="zones">${icon("layers")} 광고 패킷 복합 필터 ${icon("arrow")}</button></article>
           <article class="panel quick-guide"><div class="section-heading"><h2>작은 단서, 꼼꼼한 확인</h2>${icon("glasses")}</div><img src="${asset("sample-camera.svg")}" alt="앞쪽 부품을 표시한 스마트안경 관찰용 도식"/><p>카메라 렌즈, 충전 접점, 스피커.<br>기종별로 살펴볼 위치를 확인하세요.</p><button class="text-button" data-page="guide">스마트안경 도감 보기 ${icon("arrow")}</button></article>
           <div class="quiet-note">${icon("lock")}<p>외부로 전송되는 영상·기록 없음<br><span>기록은 새로고침하면 사라집니다.</span></p></div>
         </aside></div>
@@ -205,7 +210,7 @@ $("#app").innerHTML = `
           "",
         )}</div><label class="search-field">${icon("search")}<input id="guide-search" type="search" placeholder="기종 또는 특징 검색" aria-label="도감 검색"/></label></div><div class="guide-grid" id="guide-grid"></div><div class="quiet-note">${icon("info")}<p>그림은 관찰 위치를 안내하는 자체 제작 도식입니다. 제품 사진·크기 비교·검증된 시그니처가 아닙니다. 자료 확인: 2026.11.07.</p></div></section>
 
-      <section id="page-zones" class="page-section" aria-label="구역별 신호 비교" hidden><div class="import-layout"><article class="panel import-panel"><span class="feature-icon">${icon("map")}</span><div><div class="eyebrow">BRING YOUR OWN RECEIVER</div><h2>수신기의 기록을,<br>하나의 점검 화면으로.</h2><p>Android·ESP32 등 별도 수신기의 측정값을 지정된 JSON 형식으로 가져오세요. 이 브라우저가 신호 세기를 직접 측정하지는 않습니다.</p><div class="button-row"><button class="button primary" id="radio-import">${icon("upload")} 측정 파일 열기</button><button class="button secondary" id="radio-demo">${icon("play")} 예제로 살펴보기</button></div><input id="radio-input" type="file" accept=".json,application/json" hidden/><a class="text-button" href="${asset("radio-example.json")}" download="examguard-radio-example.json">예제 형식 다운로드 ${icon("download")}</a></div></article><article class="panel measurement-note"><h2>비교가 의미 있으려면</h2><ol><li>같은 수신기로 같은 기기를 측정합니다.</li><li>구역마다 3회 이상 반복합니다.</li><li>측정 시간과 방향을 비슷하게 맞춥니다.</li></ol><p>RSSI는 벽·몸·안테나 방향의 영향을 받습니다. 상대적으로 강한 구역을 보여주며, 거리·좌석·소유자를 확정하지 않습니다.</p></article></div><p id="radio-message" class="inline-message" role="status"></p><div id="radio-results"></div></section>
+      <section id="page-zones" class="page-section" aria-label="구역별 신호 비교" hidden><div class="import-layout"><article class="panel import-panel"><span class="feature-icon">${icon("map")}</span><div><div class="eyebrow">BRING YOUR OWN RECEIVER</div><h2>수신기의 기록을,<br>하나의 점검 화면으로.</h2><p>Android·ESP32 등 별도 수신기의 측정값을 지정된 JSON 형식으로 가져오세요. 이 브라우저가 신호 세기를 직접 측정하지는 않습니다.</p><div class="button-row"><button class="button primary" id="radio-import">${icon("upload")} 측정 파일 열기</button><button class="button secondary" id="radio-demo">${icon("play")} 예제로 살펴보기</button></div><input id="radio-input" type="file" accept=".json,application/json" hidden/><a class="text-button" href="${asset("radio-example.json")}" download="examguard-radio-example.json">예제 형식 다운로드 ${icon("download")}</a></div></article><article class="panel measurement-note"><h2>비교가 의미 있으려면</h2><ol><li>같은 수신기로 같은 기기를 측정합니다.</li><li>구역마다 3회 이상 반복합니다.</li><li>측정 시간과 방향을 비슷하게 맞춥니다.</li></ol><p>RSSI는 벽·몸·안테나 방향의 영향을 받습니다. 상대적으로 강한 구역을 보여주며, 거리·좌석·소유자를 확정하지 않습니다.</p></article></div><p id="radio-message" class="inline-message" role="status"></p><article class="panel signature-panel"><div class="signature-heading"><div><div class="eyebrow">MANUFACTURER + UUID + PAYLOAD</div><h2>광고 패킷 복합 필터</h2></div><span class="badge">외부 자료 대조</span></div><p class="panel-description">회사 ID가 같아도 바로 기종 후보로 분류하지 않습니다. 같은 광고의 UUID·바이트 배열·마스크 조건까지 함께 확인합니다.</p><div class="button-row"><button class="button secondary small" id="signature-import">${icon("upload")} 규칙 파일 열기</button><button class="button primary small" id="signature-demo">${icon("play")} 복합 필터 예제</button><button class="text-button" id="signature-clear" disabled>규칙 지우기</button><a class="text-button" href="${repository}/blob/main/docs/SIGNATURES.md" target="_blank" rel="noopener noreferrer">규칙·입력 형식 ${icon("external")}</a></div><input id="signature-input" type="file" accept=".json,application/json" hidden/><p id="signature-rules-state" class="tiny"></p><p id="signature-message" role="status"></p><div id="signature-results"></div></article><div id="radio-results"></div></section>
 
       <section id="page-records" class="page-section" aria-label="점검 기록" hidden><div class="report-banner"><div><span class="eyebrow">OBSERVE. VERIFY. DOCUMENT.</span><h2>판정 대신, 확인한 사실을 남깁니다.</h2><p>현장 기록만 JSON 보고서로 저장합니다. 연습 데이터와 영상·사진은 포함하지 않습니다.</p></div><button class="button primary" id="export-report">${icon("download")} 보고서 내보내기</button></div><div class="handoff-link"><button class="text-button" id="handoff-button">${icon("clipboard")} 발견 기기 실물 확인·인계 절차 ${icon("arrow")}</button></div><div id="record-summary" class="stat-grid"></div><article class="panel"><div class="panel-header"><h2>이번 점검의 기록</h2><span class="badge">메모리에서만 유지</span></div><div id="all-records"></div></article><div class="quiet-note">${icon("info")}<p>새 점검이나 새로고침 전에 필요한 보고서를 내려받으세요. 이름은 기기가 알린 값이며 소유자 정보가 아닙니다.</p></div></section>
       <footer class="main-footer"><span>${icon("shield")} ExamGuard <span class="footer-divider">/</span> 함께 만드는 공정한 시험 환경</span><span>오픈소스 · 현장 검증 전 프로토타입</span></footer>
@@ -293,6 +298,7 @@ optical
 function navigate(page: Page, focus = true) {
   if (!nav.some((item) => item.page === page)) return;
   currentPage = page;
+  document.body.dataset.page = page;
   const selected = nav.find((item) => item.page === page)!;
   $$(".page-section").forEach((section) => {
     section.hidden = section.id !== `page-${page}`;
@@ -637,7 +643,7 @@ function renderGuides() {
     ? visible
         .map(
           (g, i) =>
-            `<button class="guide-card" data-guide="${g.id}"><div class="guide-art"><span class="art-number">${String(i + 1).padStart(2, "0")}</span><img src="${asset(`sample-${g.sample}.svg`)}" alt="${esc(g.name)} 관찰 위치를 설명하는 도식"/><span class="art-caption">관찰용 도식 · 실물 사진 아님</span></div><div class="guide-card-copy"><span class="badge">${g.label}</span><h2>${g.name}${icon("arrow")}</h2><p>${g.description}</p><span class="guide-read">관찰 포인트 ${g.points.length}개 ${icon("external")}</span></div></button>`,
+            `<button class="guide-card" data-kind="${g.category}" data-guide="${g.id}"><div class="guide-art"><span class="art-number">${String(i + 1).padStart(2, "0")}</span><img src="${asset(`sample-${g.sample}.svg`)}" alt="${esc(g.name)} 관찰 위치를 설명하는 도식"/><span class="art-caption">관찰용 도식 · 실물 사진 아님</span></div><div class="guide-card-copy"><span class="badge">${g.label}</span><h2>${g.name}${icon("arrow")}</h2><p>${g.description}</p><span class="guide-read">관찰 포인트 ${g.points.length}개 ${icon("external")}</span></div></button>`,
         )
         .join("")
     : '<div class="empty-state"><strong>검색 결과가 없습니다</strong><p>다른 기종명이나 특징으로 검색해 주세요.</p></div>';
@@ -663,6 +669,64 @@ $("#page-guide").addEventListener("click", (event) => {
 });
 
 $("#radio-import").addEventListener("click", () => $("#radio-input").click());
+$("#signature-import").addEventListener("click", () =>
+  $("#signature-input").click(),
+);
+$("#signature-input").addEventListener("change", async (event) => {
+  const input = event.target as HTMLInputElement,
+    file = input.files?.[0];
+  const generation = sessionGeneration;
+  if (file)
+    try {
+      if (file.size > 256_000)
+        throw new Error("규칙 파일은 256 KB 이하로 선택해 주세요.");
+      const parsed = parseSignatureRules(await file.text());
+      if (generation !== sessionGeneration) return;
+      signatureRules = parsed;
+      $("#signature-message").textContent = "";
+      renderRadio();
+    } catch (error) {
+      if (generation === sessionGeneration)
+        $("#signature-message").textContent =
+          error instanceof Error ? error.message : "규칙을 읽지 못했습니다.";
+    }
+  input.value = "";
+});
+$("#signature-clear").addEventListener("click", () => {
+  signatureRules = null;
+  $("#signature-message").textContent = "";
+  renderRadio();
+});
+$("#signature-demo").addEventListener("click", async () => {
+  const generation = sessionGeneration;
+  try {
+    const responses = await Promise.all([
+      fetch(asset("signature-example.json")),
+      fetch(asset("radio-advertisement-example.json")),
+    ]);
+    if (responses.some((response) => !response.ok))
+      throw new Error("예제 파일을 불러오지 못했습니다.");
+    const [rulesText, captureText] = await Promise.all(
+      responses.map((response) => response.text()),
+    );
+    const rules = parseSignatureRules(rulesText!),
+      capture = parseRadioCapture(captureText!);
+    if (generation !== sessionGeneration) return;
+    if (!rules.isDemo || !capture.isDemo)
+      throw new Error("연습 자료 표시를 확인할 수 없습니다.");
+    signatureRules = rules;
+    radioCapture = capture;
+    $("#signature-message").textContent =
+      "가상의 광고·규칙으로 필터 동작을 확인합니다. 현장 보고서에서 제외됩니다.";
+    $("#radio-message").textContent = "";
+    renderRadio();
+  } catch (error) {
+    if (generation === sessionGeneration)
+      $("#signature-message").textContent =
+        error instanceof Error ? error.message : "예제를 읽지 못했습니다.";
+  }
+});
+
 $("#radio-input").addEventListener("change", async (event) => {
   const input = event.target as HTMLInputElement,
     file = input.files?.[0];
@@ -703,6 +767,14 @@ $("#radio-demo").addEventListener("click", async () => {
   }
 });
 function renderRadio() {
+  $("#signature-results").innerHTML = renderSignatureResults(
+    radioCapture,
+    signatureRules,
+  );
+  $("#signature-rules-state").textContent = signatureRules
+    ? `${signatureRules.isDemo ? "연습 규칙" : "사용자 제공 규칙"} · ${signatureRules.rules.length}개 · ${signatureRules.source}`
+    : "등록된 규칙 없음 · 실측 기종 규칙은 아직 내장되어 있지 않습니다.";
+  $<HTMLButtonElement>("#signature-clear").disabled = !signatureRules;
   if (!radioCapture) {
     $("#radio-results").innerHTML =
       `<div class="panel empty-state">${icon("map")}<strong>측정 파일을 기다리고 있습니다</strong><p>JSON 파일을 열거나 연습 예제로 구역 비교를 살펴보세요.</p></div>`;
@@ -747,7 +819,13 @@ function renderRecords() {
     );
 }
 $("#export-report").addEventListener("click", () => {
-  const report = createReport(preflight, devices, inspections, radioCapture);
+  const report = createReport(
+    preflight,
+    devices,
+    inspections,
+    radioCapture,
+    signatureRules,
+  );
   const blob = new Blob([JSON.stringify(report, null, 2)], {
     type: "application/json",
   });
@@ -769,6 +847,8 @@ $("#reset-button").addEventListener("click", () => {
     devices = [];
     inspections = [];
     radioCapture = null;
+    signatureRules = null;
+    $("#signature-message").textContent = "";
     deviceKeys.clear();
     preflight.fill(false);
     mode = "live";
