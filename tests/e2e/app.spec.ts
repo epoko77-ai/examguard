@@ -8,6 +8,7 @@ async function takeShot(
   page: Page,
   options: { path: string; fullPage: boolean },
 ) {
+  await expect(page.locator("#toast")).toBeHidden();
   if (options.fullPage) {
     await page.evaluate(() => {
       (document.activeElement as HTMLElement)?.blur();
@@ -59,6 +60,28 @@ test("core UI, preflight, training records, catalog, mobile layout and offline r
   await page.locator("#scan-button").click();
   await expect(page.locator("#device-count")).toHaveText("03");
   await go(page, "optical");
+  // The full diagram must fit the inspection canvas; viewBox-only SVGs can
+  // otherwise be cropped using the browser's fallback intrinsic dimensions.
+  await expect
+    .poll(async () =>
+      page.evaluate(async () => {
+        const reference = new Image();
+        reference.src = new URL("sample-camera.svg", location.href).href;
+        await reference.decode();
+        const expected = document.createElement("canvas");
+        expected.width = 768;
+        expected.height = 480;
+        const context = expected.getContext("2d")!;
+        context.drawImage(reference, 0, 0, 768, 480);
+        const target = (
+          document.querySelector("#optical-canvas") as HTMLCanvasElement
+        ).getContext("2d")!;
+        const actual = target.getImageData(0, 0, 768, 480).data;
+        const wanted = context.getImageData(0, 0, 768, 480).data;
+        return actual.every((value, i) => Math.abs(value - wanted[i]!) <= 2);
+      }),
+    )
+    .toBe(true);
   await page.locator('[data-filter="negative"]').click();
   await expect(page.locator("#filter-badge")).toHaveText("색상 반전");
   await expect(page.locator("#torch-button")).toBeDisabled();

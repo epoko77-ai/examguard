@@ -31,7 +31,7 @@ for (const kind of ["camera", "display", "normal", "audio"]) {
     kind === "camera"
       ? '<g fill="none" stroke="#8be5bc" stroke-width=".8" opacity=".65"><circle cx="156" cy="221" r="18"/><path d="M141 209 108 180H63"/><circle cx="612" cy="221" r="15"/><path d="m624 211 35-31h46"/></g><g fill="#8ebfa8" font-size="8" font-family="monospace"><text x="65" y="173">FRONT COMPONENT</text><text x="641" y="173">INDICATOR</text></g>'
       : "";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 480">${common}${frame}${annotations}<g fill="#638777" font-size="8" letter-spacing="2" font-family="monospace"><text x="30" y="444">EXAMGUARD / REFERENCE ILLUSTRATION</text><text x="639" y="444">${kind.toUpperCase()}</text></g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="768" height="480" viewBox="0 0 768 480">${common}${frame}${annotations}<g fill="#638777" font-size="8" letter-spacing="2" font-family="monospace"><text x="30" y="444">EXAMGUARD / REFERENCE ILLUSTRATION</text><text x="639" y="444">${kind.toUpperCase()}</text></g></svg>`;
   await writeFile(`public/sample-${kind}.svg`, svg);
 }
 const logo =

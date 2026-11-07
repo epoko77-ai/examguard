@@ -37,7 +37,7 @@ for (const kind of ["g1", "xreal", "mijia", "huawei"]) {
     markers =
       marker(343, 359, "1") + marker(242, 359, "2") + marker(464, 410, "3");
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 480">${styles}<g fill="#80aa94" font-family="monospace" font-size="10" letter-spacing="2"><text x="30" y="34">${kind.toUpperCase()} / FORM &amp; COMPONENTS</text><text x="30" y="345">TEMPLE DETAIL · SCHEMATIC</text></g>${front}<path d="M30 325h708" stroke="#85b09b33"/>${detail}${markers}<text x="30" y="462" fill="#779a87" font-family="monospace" font-size="8" letter-spacing="2">EXAMGUARD / ORIGINAL ILLUSTRATION · NOT TO SCALE</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="768" height="480" viewBox="0 0 768 480">${styles}<g fill="#80aa94" font-family="monospace" font-size="10" letter-spacing="2"><text x="30" y="34">${kind.toUpperCase()} / FORM &amp; COMPONENTS</text><text x="30" y="345">TEMPLE DETAIL · SCHEMATIC</text></g>${front}<path d="M30 325h708" stroke="#85b09b33"/>${detail}${markers}<text x="30" y="462" fill="#779a87" font-family="monospace" font-size="8" letter-spacing="2">EXAMGUARD / ORIGINAL ILLUSTRATION · NOT TO SCALE</text></svg>`;
   await writeFile(`public/sample-${kind}.svg`, svg);
 }
 console.log("Generated four model-specific inspection diagrams.");
