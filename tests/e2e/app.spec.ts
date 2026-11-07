@@ -1,0 +1,248 @@
+import { test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+const go = async (page: Page, tab: string) => {
+  await page.locator(`.nav-item[data-page="${tab}"]`).click();
+};
+async function report(page: Page) {
+  await go(page, "records");
+  const download = page.waitForEvent("download");
+  await page.locator("#export-report").click();
+  return JSON.parse(await readFile((await (await download).path())!, "utf8"));
+}
+test("core UI, preflight, training records, catalog, mobile layout and offline reload", async ({
+  page,
+  context,
+}, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const requested: string[] = [];
+  page.on("request", (r) => requested.push(r.url()));
+  await page.goto("./");
+  await expect(page.locator("#page-title")).toHaveText("무선 기기 확인");
+  await expect(page.locator("#scan-button")).toBeDisabled();
+  await expect(page.locator("#connection-status")).toContainText(
+    "기본 도감 오프라인 준비 완료",
+  );
+  expect(
+    requested.some((url) => url.includes("/models/") || url.endsWith(".wasm")),
+  ).toBe(false);
+  await page.screenshot({
+    path: testInfo.outputPath("wireless.png"),
+    fullPage: true,
+  });
+  await page.locator("#demo-mode").click();
+  await page.locator("#scan-button").click();
+  await expect(page.locator("#device-count")).toHaveText("03");
+  await go(page, "optical");
+  await page.locator('[data-filter="negative"]').click();
+  await expect(page.locator("#filter-badge")).toHaveText("색상 반전");
+  await expect(page.locator("#torch-button")).toBeDisabled();
+  await expect(page.locator("#camera-find-guide")).toBeDisabled();
+  await page.locator('[name="observation"]').first().check();
+  await page.locator("#save-observation").click();
+  await page.screenshot({
+    path: testInfo.outputPath("optical.png"),
+    fullPage: true,
+  });
+  const exported = await report(page);
+  expect(exported.devices).toEqual([]);
+  expect(exported.inspections).toEqual([]);
+  expect(exported.radioCapture).toBeNull();
+  await go(page, "guide");
+  await expect(page.locator(".guide-card")).toHaveCount(6);
+  await page.locator("#guide-search").fill("G1");
+  await expect(page.locator(".guide-card")).toHaveCount(1);
+  await page.locator(".guide-card").click();
+  await expect(page.locator(".atlas-features article")).toHaveCount(3);
+  await expect(page.locator("dialog")).toContainText("TouchBar");
+  await page.screenshot({
+    path: testInfo.outputPath("guide-detail.png"),
+    fullPage: true,
+  });
+  await page.locator(".dialog-close").click();
+  await page.locator("#guide-search").fill("");
+  await page.screenshot({
+    path: testInfo.outputPath("guide.png"),
+    fullPage: true,
+  });
+  for (const tab of ["wireless", "optical", "guide", "zones", "records"]) {
+    await go(page, tab);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+      tab,
+    ).toBe(true);
+  }
+  await context.setOffline(true);
+  await page.reload();
+  await go(page, "guide");
+  await expect(page.locator(".guide-card")).toHaveCount(6);
+  expect(errors).toEqual([]);
+});
+test("browser selection escaping, explicit classification and reset ignore delayed choices", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "bluetooth", {
+      value: {
+        requestDevice: () =>
+          new Promise((resolve) => {
+            (window as any).resolveDevice = resolve;
+          }),
+      },
+      configurable: true,
+    }),
+  );
+  await page.goto("./");
+  for (const button of await page.locator("[data-preflight]").all())
+    await button.click();
+  await expect(page.locator("#scan-button")).toBeEnabled();
+  await page.locator("#scan-button").click();
+  await page.evaluate(() =>
+    (window as any).resolveDevice({
+      id: "private-device-id",
+      name: '<img src=x onerror="window.injected=1">',
+    }),
+  );
+  await expect(page.locator("#device-count")).toHaveText("01");
+  expect(await page.evaluate(() => (window as any).injected)).toBeUndefined();
+  await page.locator("[data-disposition]").selectOption("allowed");
+  const exported = await report(page);
+  expect(exported.devices[0].disposition).toBe("allowed");
+  expect(exported.devices[0].owner).toBeNull();
+  expect(JSON.stringify(exported)).not.toContain("private-device-id");
+  await go(page, "wireless");
+  await page.locator("#scan-button").click();
+  await page.locator("#reset-button").click();
+  await page.locator("#confirm-reset").click();
+  await page.evaluate(() =>
+    (window as any).resolveDevice({ id: "late-device", name: "Late" }),
+  );
+  await expect(page.locator("#device-count")).toHaveText("00");
+});
+test("camera denial falls back to image, filters can be used and photo search opens with the frame", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      value: async () => {
+        throw new DOMException("Denied", "NotAllowedError");
+      },
+    }),
+  );
+  await page.goto("./#optical");
+  await page.locator("#camera-button").click();
+  await expect(page.locator("#camera-message")).toContainText(
+    "권한이 허용되지",
+  );
+  await page
+    .locator("#image-input")
+    .setInputFiles("tests/fixtures/meta-crop.jpg");
+  await expect(page.locator("#camera-source")).toHaveText("직접 연 사진");
+  await page.locator('[name="observation"]').nth(1).check();
+  await page.locator("#save-observation").click();
+  await page.locator("#camera-find-guide").click();
+  await expect(page.locator("#photo-crop")).toBeVisible();
+  await page.locator("#photo-clear").click();
+  await expect(page.locator("#photo-crop")).toBeHidden();
+  const exported = await report(page);
+  expect(exported.inspections).toHaveLength(1);
+  expect(exported.inspections[0].source).toBe("image");
+  expect(JSON.stringify(exported)).not.toContain("data:image");
+});
+test("radio imports reject invalid data, show repeated-zone evidence and stay separate from training", async ({
+  page,
+}) => {
+  await page.goto("./#zones");
+  await page.locator("#radio-demo").click();
+  await expect(page.locator(".signal-card")).toHaveCount(2);
+  expect((await report(page)).radioCapture).toBeNull();
+  await go(page, "zones");
+  await page
+    .locator("#radio-input")
+    .setInputFiles({
+      name: "bad.json",
+      mimeType: "application/json",
+      buffer: Buffer.from("{}"),
+    });
+  await expect(page.locator("#radio-message")).toContainText("형식");
+  const samples = [
+    ...[-60, -61, -62].map((rssi) => ({ zone: "A", rssi })),
+    ...[-70, -71, -72].map((rssi) => ({ zone: "B", rssi })),
+    { zone: "single-outlier", rssi: -10 },
+  ].map((v) => ({
+    ...v,
+    deviceKey: "anonymous",
+    name: "<script>unsafe</script>",
+    timestamp: "2026-11-07T01:00:00Z",
+  }));
+  await page
+    .locator("#radio-input")
+    .setInputFiles({
+      name: "real.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          schema: "examguard.radio.v1",
+          source: "test receiver",
+          isDemo: false,
+          samples,
+        }),
+      ),
+    });
+  await expect(page.locator(".signal-conclusion strong")).toHaveText("A");
+  expect((await report(page)).radioCapture.samples).toHaveLength(7);
+});
+test("photo search runs real local WASM, returns catalog candidates and works offline after caching", async ({
+  page,
+  context,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const requests: string[] = [];
+  page.on("request", (r) => requests.push(r.url()));
+  page.on("console", (m) => {
+    if (m.type() === "error") console.log("BROWSER:", m.text());
+  });
+  await page.goto("./#guide");
+  await expect(page.locator("#connection-status")).toContainText(
+    "기본 도감 오프라인 준비 완료",
+  );
+  await page
+    .locator("#photo-file-input")
+    .setInputFiles("tests/fixtures/meta-crop.jpg");
+  await expect(page.locator("#photo-crop")).toBeVisible();
+  await page.locator("#photo-run").click();
+  await expect(page.locator("#photo-progress")).toContainText("대조 완료", {
+    timeout: 120_000,
+  });
+  await expect(page.locator(".photo-candidate")).toHaveCount(3);
+  await expect(page.locator(".photo-candidate").first()).toHaveAttribute(
+    "data-guide",
+    "meta",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("photo-results.png"),
+    fullPage: true,
+  });
+  await page.locator(".photo-candidate").first().click();
+  await expect(page.locator("#dialog-title")).toContainText("Ray-Ban");
+  await page.locator(".dialog-close").click();
+  await page.locator("#photo-clear").click();
+  await context.setOffline(true);
+  await page.reload();
+  await page
+    .locator("#photo-file-input")
+    .setInputFiles("tests/fixtures/meta-crop.jpg");
+  await page.locator("#photo-run").click();
+  await expect(page.locator("#photo-progress")).toContainText("대조 완료", {
+    timeout: 90_000,
+  });
+  expect(
+    requests.filter((url) => !url.startsWith("http://127.0.0.1:4173/")),
+  ).toEqual([]);
+  expect(errors).toEqual([]);
+});

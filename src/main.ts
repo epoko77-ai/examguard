@@ -1,0 +1,842 @@
+import "./styles.css";
+import "./photo.css";
+import { icon } from "./lib/icons";
+import {
+  createReport,
+  DISPOSITIONS,
+  escapeHtml as esc,
+  parseRadioCapture,
+  summarizeRadio,
+  ZONES,
+} from "./lib/core";
+import type {
+  DeviceRecord,
+  Disposition,
+  Inspection,
+  Preflight,
+  RadioCapture,
+  Zone,
+} from "./lib/core";
+import { OpticalEngine } from "./lib/optical";
+import { PhotoSearch } from "./lib/photo-search";
+import type { OpticalState } from "./lib/optical";
+import { FILTER_LABELS } from "./lib/filters";
+import type { Filter } from "./lib/filters";
+import { guides, observationLabels } from "./data/guides";
+
+type Page = "wireless" | "optical" | "guide" | "zones" | "records";
+type BrowserDevice = { id: string; name?: string };
+type BluetoothNavigator = Navigator & {
+  bluetooth?: {
+    requestDevice(options: { acceptAllDevices: true }): Promise<BrowserDevice>;
+  };
+};
+const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
+  document.querySelector<T>(selector)!;
+const $$ = <T extends HTMLElement = HTMLElement>(selector: string) => [
+  ...document.querySelectorAll<T>(selector),
+];
+const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
+const repository = "https://github.com/epoko77-ai/examguard";
+const nav: { page: Page; icon: string; title: string; subtitle: string }[] = [
+  {
+    page: "wireless",
+    icon: "radio",
+    title: "무선 기기 확인",
+    subtitle: "전원 종료·수거 후, 남아 있는 기기를 차분히 확인하세요.",
+  },
+  {
+    page: "optical",
+    icon: "camera",
+    title: "광학 검사",
+    subtitle: "카메라와 이미지 필터로 안경의 작은 부품을 자세히 살펴보세요.",
+  },
+  {
+    page: "guide",
+    icon: "book",
+    title: "스마트안경 도감",
+    subtitle: "외형의 단서를 찾고, 공식 자료와 실물을 함께 대조하세요.",
+  },
+  {
+    page: "zones",
+    icon: "map",
+    title: "구역별 신호 비교",
+    subtitle: "외부 수신기로 반복 측정한 신호 세기를 구역별로 비교하세요.",
+  },
+  {
+    page: "records",
+    icon: "clipboard",
+    title: "점검 기록",
+    subtitle: "관찰한 사실과 확인 상태를 정리해 다음 점검으로 연결하세요.",
+  },
+];
+const zoneOptions = (selected: string = "미지정") =>
+  ZONES.map(
+    (zone) => `<option ${zone === selected ? "selected" : ""}>${zone}</option>`,
+  ).join("");
+const preflight: Preflight = [false, false, false];
+let currentPage: Page = "wireless";
+let mode: "live" | "demo" = "live";
+let devices: DeviceRecord[] = [];
+let inspections: Inspection[] = [];
+let radioCapture: RadioCapture | null = null;
+let pendingBluetooth = false;
+let sessionGeneration = 0;
+let cameraState: OpticalState = {
+  source: "demo",
+  pending: false,
+  frozen: false,
+  torch: false,
+  torchAvailable: false,
+  message: "",
+};
+const deviceKeys = new Map<string, string>();
+let offlineReady = false;
+let guideCategory = "all";
+let toastTimer: ReturnType<typeof setTimeout>;
+
+$("#app").innerHTML = `
+  <aside class="sidebar">
+    <a href="#wireless" class="brand" aria-label="ExamGuard 홈"><span class="brand-symbol">${icon("shield")}</span><span>Exam<span class="mint">Guard</span><small>시험의 공정함을 지키는 도구</small></span></a>
+    <div class="workspace-label"><span class="status-dot"></span> INSPECTION WORKSPACE</div>
+    <nav aria-label="주 메뉴">${nav.map((item, i) => `<button class="nav-item ${i === 0 ? "active" : ""}" data-page="${item.page}" ${i === 0 ? 'aria-current="page"' : ""}>${icon(item.icon)}<span>${item.title}</span>${item.page === "records" ? '<span id="nav-record-count" class="nav-count">0</span>' : ""}</button>`).join("")}</nav>
+    <div class="sidebar-bottom">
+      <div class="local-card">${icon("lock")}<strong>이 기기 안에서만</strong><p>영상과 점검 기록을<br>서버로 전송하지 않습니다.</p><span>LOCAL PROCESSING</span></div>
+      <button class="sidebar-link" id="help-button">${icon("info")} 사용 가이드 ${icon("arrow")}</button>
+      <a class="sidebar-link" href="${repository}" target="_blank" rel="noopener noreferrer">${icon("github")} 오픈소스 프로젝트 ${icon("external")}</a>
+      <div class="sidebar-version">v0.1.0 <span>MIT LICENSE</span></div>
+    </div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div class="breadcrumb">감독관 도구 <span>/</span> <strong id="breadcrumb-current">무선 기기 확인</strong></div><div class="topbar-right"><span class="connection" id="connection-status"><span class="status-dot"></span> 연결 상태 확인 중</span><button class="button small ghost" id="install-button">${icon("download")}<span>앱 설치</span></button></div></header>
+    <main id="main" tabindex="-1">
+      <div class="page-heading"><div><div class="eyebrow">A CLEARER VIEW. A FAIRER EXAM.</div><h1 id="page-title">무선 기기 확인</h1><p id="page-subtitle">${nav[0]!.subtitle}</p></div><button class="button secondary small" id="reset-button">${icon("reset")} 새 점검</button></div>
+
+      <section id="page-wireless" class="page-section" aria-label="무선 기기 확인">
+        <div class="preflight-panel"><div class="section-heading"><h2>${icon("shield")} 점검 전 준비</h2><span class="subtle" id="preflight-count">0 / 3 완료</span></div>
+          <div class="preflight-grid">${[
+            ["phone", "휴대전화 전원 종료", "잠금·무음 상태와 구분해 확인"],
+            ["box", "전자기기 수거 완료", "시험 주관기관의 수거 절차에 따라"],
+            ["shield", "허용 장비 확인", "감독 장비·보조기기·주변 신호 구분"],
+          ]
+            .map(
+              ([symbol, title, sub], i) =>
+                `<button class="preflight-item" data-preflight="${i}" aria-pressed="false"><span class="step-icon">${icon(symbol!)}</span><span><strong>${title}</strong><small>${sub}</small></span><span class="check-circle">${icon("check")}</span></button>`,
+            )
+            .join("")}</div>
+        </div>
+        <div class="work-grid"><div class="main-column">
+          <article class="panel wireless-panel"><div class="panel-header"><h2>${icon("radio")} 주변 기기 확인</h2><div class="segmented" role="group" aria-label="점검 모드"><button id="live-mode" class="selected" aria-pressed="true">현장 점검</button><button id="demo-mode" aria-pressed="false">연습 모드</button></div></div>
+            <div class="wireless-body"><div class="radar" aria-hidden="true"><div class="radar-ring r1"></div><div class="radar-ring r2"></div><div class="radar-ring r3"></div><div class="radar-axis horizontal"></div><div class="radar-axis vertical"></div><div class="radar-wedge"></div><div class="radar-core">${icon("bluetooth")}</div><span class="radar-label">BLUETOOTH LE</span><span class="radar-tick t1">N</span><span class="radar-tick t2">E</span></div>
+              <div class="wireless-copy"><div class="badge muted-badge" id="scan-status">${icon("power")} 점검 준비</div><h3 id="scan-title">먼저 전원을 끄고,<br>남아 있는 기기를 확인하세요.</h3><p id="scan-description">준비 항목을 확인한 뒤 브라우저의 기기 목록을 엽니다. 목록에서 선택한 기기만 아래에 기록됩니다.</p><button class="button primary" id="scan-button">${icon("bluetooth")} Bluetooth 기기 선택 ${icon("arrow")}</button><p class="tiny" id="scan-hint"></p><p id="scan-message" class="inline-message" role="status"></p></div>
+            </div>
+            <div class="panel-footnote">${icon("info")} <span>기기 발견은 추가 확인의 단서입니다. 이름만으로 기종·소유자·부정행위를 판정하지 않습니다.</span></div>
+          </article>
+          <div class="stat-grid"><div class="stat-card"><span>선택한 기기</span><strong id="device-count">00</strong><small>전체 주변 기기 수가 아닙니다</small></div><div class="stat-card"><span>추가 확인 필요</span><strong class="amber" id="followup-count">00</strong><small>감독관이 표시한 항목</small></div><div class="stat-card"><span>허용 장비로 확인</span><strong class="mint" id="allowed-count">00</strong><small>확인 후 직접 분류한 장비</small></div></div>
+          <article class="panel"><div class="panel-header"><h2>기기 확인 목록 <span class="count-badge" id="list-count">0</span></h2><label class="zone-picker">현재 확인 구역 <select id="current-zone" aria-label="현재 확인 구역">${zoneOptions()}</select></label></div><div id="device-list"></div><div class="list-footer"><span id="list-source">현장 점검 기록 · 이 탭에서만 유지</span><button class="text-button" data-page="records">전체 기록 ${icon("arrow")}</button></div></article>
+        </div><aside class="context-column">
+          <article class="panel workflow-panel"><div class="section-heading"><h2>현장 점검 순서</h2><span class="badge">4 STEPS</span></div><ol class="workflow">${[
+            ["전원 종료·수거", "휴대전화와 전자기기 수거를 먼저 확인합니다."],
+            ["남아 있는 기기 확인", "선택한 기기와 허용 장비를 구분합니다."],
+            ["구역·실물 대조", "확인 구역을 기록하고 안경 외형을 살펴봅니다."],
+            ["기록·담당자 확인", "관찰한 사실을 정리해 담당자에게 전달합니다."],
+          ]
+            .map(
+              ([title, detail], i) =>
+                `<li><span class="workflow-number">${i + 1}</span><div><strong>${title}</strong><p>${detail}</p></div></li>`,
+            )
+            .join(
+              "",
+            )}</ol><button class="button secondary full" data-page="optical">${icon("camera")} 광학 검사 열기 ${icon("arrow")}</button></article>
+          <article class="panel quick-guide"><div class="section-heading"><h2>작은 단서, 꼼꼼한 확인</h2>${icon("glasses")}</div><img src="${asset("sample-camera.svg")}" alt="앞쪽 부품을 표시한 스마트안경 관찰용 도식"/><p>카메라 렌즈, 충전 접점, 스피커.<br>기종별로 살펴볼 위치를 확인하세요.</p><button class="text-button" data-page="guide">스마트안경 도감 보기 ${icon("arrow")}</button></article>
+          <div class="quiet-note">${icon("lock")}<p>외부로 전송되는 영상·기록 없음<br><span>기록은 새로고침하면 사라집니다.</span></p></div>
+        </aside></div>
+      </section>
+
+      <section id="page-optical" class="page-section" aria-label="광학 검사" hidden>
+        <div class="work-grid"><div class="main-column"><article class="panel camera-panel"><div class="panel-header"><h2>${icon("camera")} 광학 검사 화면</h2><span class="badge amber-badge" id="camera-source">연습용 일러스트</span></div>
+          <div class="viewfinder"><canvas id="optical-canvas" aria-label="카메라 또는 선택한 이미지의 검사 화면"></canvas><div class="viewfinder-top"><span id="filter-badge">ORIGINAL</span><span id="viewfinder-source">ILLUSTRATION · 실제 측정 아님</span></div><div class="target-frame" aria-hidden="true"><i></i><i></i><i></i><i></i><span>+</span></div><div class="viewfinder-bottom"><span>안경의 위치와 각도를 바꾸어 관찰하세요</span><span id="zoom-label">1.0×</span></div></div>
+          <div class="camera-toolbar"><button class="button primary small" id="camera-button">${icon("camera")} 카메라 켜기</button><button class="button secondary small" id="image-button">${icon("upload")} 사진 열기</button><input id="image-input" type="file" accept="image/jpeg,image/png,image/webp" hidden/><div class="toolbar-spacer"></div><button class="icon-button" id="freeze-button" aria-label="화면 정지" title="화면 정지" aria-pressed="false">${icon("pause")}</button><button class="icon-button" id="torch-button" aria-label="카메라 조명" title="카메라 연결 후 지원 여부를 확인합니다" disabled aria-pressed="false">${icon("flash")}</button></div>
+          <div class="camera-find"><button class="text-button" id="camera-find-guide" disabled>${icon("search")} 이 사진으로 도감 찾기 ${icon("arrow")}</button></div><p id="camera-message" class="camera-message" role="status"></p>
+        </article><div class="filter-grid" role="group" aria-label="영상 필터">${Object.entries(
+          FILTER_LABELS,
+        )
+          .map(
+            ([value, label], i) =>
+              `<button class="filter-card ${i === 0 ? "selected" : ""}" data-filter="${value}" aria-pressed="${i === 0}">${icon(["crosshair", "contrast", "layers", "reset"][i]!)}<strong>${label}</strong><span>${["형태와 색상 확인", "밝은 반사 부분 강조", "부품 경계 관찰", "밝고 어두운 부분 반전"][i]}</span></button>`,
+          )
+          .join("")}</div>
+          <div class="panel optical-settings"><label>디지털 확대 <input id="zoom-range" type="range" min="1" max="3" step="0.25" value="1"/><output id="zoom-value">1.0×</output></label><label>반사 강조 기준 <input id="threshold-range" type="range" min="150" max="250" value="215" disabled/><output id="threshold-value">215</output></label></div>
+          <div class="sample-picker" id="sample-picker"><span>연습 샘플</span><button data-sample="camera" class="selected" aria-pressed="true">카메라형</button><button data-sample="display" aria-pressed="false">디스플레이형</button><button data-sample="normal" aria-pressed="false">일반 안경</button></div>
+          <div class="quiet-note">${icon("info")}<p>필터는 밝기와 윤곽을 강조합니다. 렌즈·HUD 자동 검출이나 AI 판정 기능은 아닙니다.</p></div>
+        </div><aside class="context-column"><article class="panel observation-panel"><div class="section-heading"><h2>직접 관찰한 특징</h2><span class="badge">수동 기록</span></div><p class="panel-description">실제로 확인한 항목만 선택하세요.<br>부품처럼 보이는 형태를 기록합니다.</p><div class="observation-list">${observationLabels.map((label, i) => `<label><input type="checkbox" name="observation" value="${i}"/><span>${label}</span></label>`).join("")}</div><label class="form-label">확인 구역<select id="optical-zone">${zoneOptions()}</select></label><button class="button primary full" id="save-observation">${icon("clipboard")} 관찰 기록 추가</button><p class="tiny" id="observation-source-note">연습용 도식의 기록은 현장 보고서에서 제외됩니다.</p></article><article class="panel inspection-tips"><h2>관찰할 때</h2><p><span>01</span> 사람의 얼굴 대신 책상 위 안경을 비추세요.</p><p><span>02</span> 초점이 맞는 거리에서 앞면과 다리 안쪽을 확인하세요.</p><p><span>03</span> 빛 반사와 나사·장식도 비슷하게 보일 수 있습니다.</p><button class="text-button" data-page="guide">공식 자료와 대조 ${icon("arrow")}</button></article></aside></div>
+      </section>
+
+      <section id="page-guide" class="page-section" aria-label="스마트안경 도감" hidden><div id="photo-search-root"></div><div class="atlas-heading"><div><div class="eyebrow">KNOW WHAT TO LOOK FOR</div><h2>3초 실물 대조 도감</h2></div><span class="badge">5종 + 일반 안경 비교</span></div><div class="guide-toolbar"><div class="category-filters" role="group" aria-label="도감 분류">${[
+        ["all", "전체"],
+        ["camera", "카메라형"],
+        ["display", "디스플레이형"],
+        ["audio", "오디오형"],
+        ["custom", "기타"],
+      ]
+        .map(
+          ([id, label], i) =>
+            `<button data-category="${id}" class="${i === 0 ? "selected" : ""}" aria-pressed="${i === 0}">${label}</button>`,
+        )
+        .join(
+          "",
+        )}</div><label class="search-field">${icon("search")}<input id="guide-search" type="search" placeholder="기종 또는 특징 검색" aria-label="도감 검색"/></label></div><div class="guide-grid" id="guide-grid"></div><div class="quiet-note">${icon("info")}<p>그림은 관찰 위치를 안내하는 자체 제작 도식입니다. 제품 사진·크기 비교·검증된 시그니처가 아닙니다. 자료 확인: 2026.11.07.</p></div></section>
+
+      <section id="page-zones" class="page-section" aria-label="구역별 신호 비교" hidden><div class="import-layout"><article class="panel import-panel"><span class="feature-icon">${icon("map")}</span><div><div class="eyebrow">BRING YOUR OWN RECEIVER</div><h2>수신기의 기록을,<br>하나의 점검 화면으로.</h2><p>Android·ESP32 등 별도 수신기의 측정값을 지정된 JSON 형식으로 가져오세요. 이 브라우저가 신호 세기를 직접 측정하지는 않습니다.</p><div class="button-row"><button class="button primary" id="radio-import">${icon("upload")} 측정 파일 열기</button><button class="button secondary" id="radio-demo">${icon("play")} 예제로 살펴보기</button></div><input id="radio-input" type="file" accept=".json,application/json" hidden/><a class="text-button" href="${asset("radio-example.json")}" download="examguard-radio-example.json">예제 형식 다운로드 ${icon("download")}</a></div></article><article class="panel measurement-note"><h2>비교가 의미 있으려면</h2><ol><li>같은 수신기로 같은 기기를 측정합니다.</li><li>구역마다 3회 이상 반복합니다.</li><li>측정 시간과 방향을 비슷하게 맞춥니다.</li></ol><p>RSSI는 벽·몸·안테나 방향의 영향을 받습니다. 상대적으로 강한 구역을 보여주며, 거리·좌석·소유자를 확정하지 않습니다.</p></article></div><p id="radio-message" class="inline-message" role="status"></p><div id="radio-results"></div></section>
+
+      <section id="page-records" class="page-section" aria-label="점검 기록" hidden><div class="report-banner"><div><span class="eyebrow">OBSERVE. VERIFY. DOCUMENT.</span><h2>판정 대신, 확인한 사실을 남깁니다.</h2><p>현장 기록만 JSON 보고서로 저장합니다. 연습 데이터와 영상·사진은 포함하지 않습니다.</p></div><button class="button primary" id="export-report">${icon("download")} 보고서 내보내기</button></div><div class="handoff-link"><button class="text-button" id="handoff-button">${icon("clipboard")} 발견 기기 실물 확인·인계 절차 ${icon("arrow")}</button></div><div id="record-summary" class="stat-grid"></div><article class="panel"><div class="panel-header"><h2>이번 점검의 기록</h2><span class="badge">메모리에서만 유지</span></div><div id="all-records"></div></article><div class="quiet-note">${icon("info")}<p>새 점검이나 새로고침 전에 필요한 보고서를 내려받으세요. 이름은 기기가 알린 값이며 소유자 정보가 아닙니다.</p></div></section>
+      <footer class="main-footer"><span>${icon("shield")} ExamGuard <span class="footer-divider">/</span> 함께 만드는 공정한 시험 환경</span><span>오픈소스 · 현장 검증 전 프로토타입</span></footer>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <dialog id="dialog"><button class="dialog-close icon-button" aria-label="닫기">${icon("close")}</button><div id="dialog-content"></div></dialog>
+`;
+
+function toast(message: string) {
+  const element = $("#toast");
+  element.textContent = message;
+  element.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    element.hidden = true;
+  }, 4000);
+}
+function openDialog(html: string) {
+  $("#dialog-content").innerHTML = html;
+  $("#dialog").setAttribute("aria-labelledby", "dialog-title");
+  dialog.showModal();
+}
+const dialog = $<HTMLDialogElement>("dialog");
+$(".dialog-close").addEventListener("click", () => dialog.close());
+dialog.addEventListener("click", (event) => {
+  if (event.target === dialog) {
+    const rect = dialog.getBoundingClientRect();
+    if (
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom
+    )
+      dialog.close();
+  }
+});
+
+const photoSearch = new PhotoSearch($("#photo-search-root"));
+const optical = new OpticalEngine($("#optical-canvas"), (state) => {
+  if (state.source !== cameraState.source) clearObservationSelection();
+  cameraState = state;
+  const cameraButton = $("#camera-button") as HTMLButtonElement;
+  cameraButton.disabled = state.pending;
+  $<HTMLButtonElement>("#camera-find-guide").disabled =
+    state.pending || state.source === "demo";
+  cameraButton.innerHTML = `${icon(state.source === "camera" ? "power" : "camera")} ${state.pending ? "권한 확인 중…" : state.source === "camera" ? "카메라 끄기" : "카메라 켜기"}`;
+  $("#camera-source").textContent =
+    state.source === "camera"
+      ? "실시간 카메라"
+      : state.source === "image"
+        ? "직접 연 사진"
+        : "연습용 일러스트";
+  $("#camera-source").className =
+    `badge ${state.source === "demo" ? "amber-badge" : "mint-badge"}`;
+  $("#viewfinder-source").textContent =
+    state.source === "demo"
+      ? "ILLUSTRATION · 실제 측정 아님"
+      : state.source === "camera"
+        ? "LIVE CAMERA · 기기 내 처리"
+        : "LOCAL IMAGE · 기기 내 처리";
+  const freeze = $("#freeze-button") as HTMLButtonElement;
+  freeze.disabled = state.source !== "camera";
+  freeze.setAttribute("aria-pressed", String(state.frozen));
+  freeze.setAttribute("aria-label", state.frozen ? "영상 재개" : "화면 정지");
+  freeze.title = state.frozen ? "영상 재개" : "화면 정지";
+  freeze.innerHTML = icon(state.frozen ? "play" : "pause");
+  const torch = $("#torch-button") as HTMLButtonElement;
+  torch.disabled = !state.torchAvailable;
+  torch.setAttribute("aria-pressed", String(state.torch));
+  torch.title = state.torchAvailable
+    ? "카메라 조명"
+    : "현재 카메라에서 조명을 지원하지 않습니다";
+  $("#camera-message").textContent = state.message;
+  $("#sample-picker").hidden = state.source !== "demo";
+  $("#observation-source-note").textContent =
+    state.source === "demo"
+      ? "연습용 도식의 기록은 현장 보고서에서 제외됩니다."
+      : "선택한 관찰 항목만 기록합니다. 영상·사진은 저장하지 않습니다.";
+});
+optical
+  .setSample(asset("sample-camera.svg"))
+  .catch(() => toast("연습용 이미지를 불러오지 못했습니다."));
+
+function navigate(page: Page, focus = true) {
+  if (!nav.some((item) => item.page === page)) return;
+  currentPage = page;
+  const selected = nav.find((item) => item.page === page)!;
+  $$(".page-section").forEach((section) => {
+    section.hidden = section.id !== `page-${page}`;
+  });
+  $$(".nav-item").forEach((button) => {
+    const active = button.dataset.page === page;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  $("#page-title").textContent = selected.title;
+  $("#page-subtitle").textContent = selected.subtitle;
+  $("#breadcrumb-current").textContent = selected.title;
+  document.title = `${selected.title} · ExamGuard`;
+  optical.setActive(page === "optical");
+  if (page !== "optical")
+    $$<HTMLInputElement>('[name="observation"]').forEach((input) => {
+      input.checked = false;
+    });
+  if (page === "records") renderRecords();
+  if (location.hash !== `#${page}`) history.replaceState(null, "", `#${page}`);
+  if (focus) {
+    $("#main").focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+}
+document.addEventListener("click", (event) => {
+  const button = (event.target as Element).closest<HTMLElement>("[data-page]");
+  if (button) navigate(button.dataset.page as Page);
+});
+window.addEventListener("hashchange", () =>
+  navigate(location.hash.slice(1) as Page),
+);
+
+function updatePreparation() {
+  $$("[data-preflight]").forEach((button) => {
+    const checked = preflight[Number(button.dataset.preflight)]!;
+    button.classList.toggle("complete", checked);
+    button.setAttribute("aria-pressed", String(checked));
+  });
+  $("#preflight-count").textContent =
+    `${preflight.filter(Boolean).length} / 3 완료`;
+  renderScan();
+}
+$$("[data-preflight]").forEach((button) =>
+  button.addEventListener("click", () => {
+    const index = Number(button.dataset.preflight);
+    preflight[index] = !preflight[index];
+    updatePreparation();
+  }),
+);
+const bluetooth = (navigator as BluetoothNavigator).bluetooth;
+const bluetoothSupported = Boolean(
+  window.isSecureContext && bluetooth?.requestDevice,
+);
+function renderScan() {
+  const isDemo = mode === "demo";
+  $("#live-mode").classList.toggle("selected", !isDemo);
+  $("#live-mode").setAttribute("aria-pressed", String(!isDemo));
+  $("#demo-mode").classList.toggle("selected", isDemo);
+  $("#demo-mode").setAttribute("aria-pressed", String(isDemo));
+  $("#scan-title").innerHTML = isDemo
+    ? "연습 데이터로<br>점검 흐름을 익혀보세요."
+    : "먼저 전원을 끄고,<br>남아 있는 기기를 확인하세요.";
+  $("#scan-description").textContent = isDemo
+    ? "실제 Bluetooth를 사용하지 않는 가상 예시입니다. 연습 기록은 현장 목록과 보고서에 섞이지 않습니다."
+    : "준비 항목을 확인한 뒤 브라우저의 기기 목록을 엽니다. 목록에서 선택한 기기만 아래에 기록됩니다.";
+  $("#scan-status").innerHTML =
+    `${icon(isDemo ? "play" : "power")} ${isDemo ? "연습 · 실제 측정 아님" : pendingBluetooth ? "브라우저 선택창 열림" : preflight.every(Boolean) ? "준비 확인 완료" : "점검 준비"}`;
+  const button = $("#scan-button") as HTMLButtonElement;
+  button.disabled =
+    pendingBluetooth ||
+    (!isDemo && (!preflight.every(Boolean) || !bluetoothSupported));
+  button.innerHTML = `${icon(isDemo ? "play" : "bluetooth")} ${isDemo ? "연습 데이터 불러오기" : pendingBluetooth ? "선택창에서 기기를 선택하세요" : "Bluetooth 기기 선택"} ${icon("arrow")}`;
+  $("#scan-hint").textContent = isDemo
+    ? "가상 기기 3개 · 모든 항목에 연습 표시"
+    : !bluetoothSupported
+      ? "이 브라우저는 Web Bluetooth를 지원하지 않습니다. 지원 브라우저를 사용하거나 연습 모드로 살펴보세요."
+      : !preflight.every(Boolean)
+        ? "위의 준비 항목 3개를 먼저 확인해 주세요."
+        : "BLE 기능이 켜져 있어야 합니다. 전체 전파·Wi-Fi·셀룰러 스캐너는 아닙니다.";
+  $(".radar").classList.toggle("requesting", pendingBluetooth);
+}
+$("#live-mode").addEventListener("click", () => {
+  mode = "live";
+  $("#scan-message").textContent = "";
+  renderScan();
+  renderDevices();
+});
+$("#demo-mode").addEventListener("click", () => {
+  mode = "demo";
+  $("#scan-message").textContent = "";
+  renderScan();
+  renderDevices();
+});
+$("#scan-button").addEventListener("click", async () => {
+  if (mode === "demo") {
+    if (devices.some((d) => d.source === "demo")) {
+      toast(
+        "연습 데이터가 이미 준비되어 있습니다. 확인 구역과 상태를 바꿔보세요.",
+      );
+      return;
+    }
+    const now = new Date().toISOString();
+    devices.push(
+      ...[
+        "스마트안경 후보 · 가상 예시",
+        "감독용 장비 · 가상 예시",
+        "이름 없는 기기 · 가상 예시",
+      ].map((name, i): DeviceRecord => ({
+        id: crypto.randomUUID(),
+        name,
+        source: "demo",
+        selectedAt: now,
+        lastSelectedAt: now,
+        selections: 1,
+        zone: ["창가", "교탁", "미지정"][i] as Zone,
+        disposition: (["followup", "allowed", "unreviewed"] as const)[i]!,
+        preparation: [...preflight],
+      })),
+    );
+    renderDevices();
+    toast("연습 데이터 3개를 불러왔습니다. 실제 탐지 결과가 아닙니다.");
+    return;
+  }
+  if (pendingBluetooth || !bluetoothSupported || !preflight.every(Boolean))
+    return;
+  const generation = sessionGeneration;
+  const preparationAtRequest: Preflight = [...preflight];
+  const zoneAtRequest = ($("#current-zone") as HTMLSelectElement).value as Zone;
+  pendingBluetooth = true;
+  $("#scan-message").textContent = "";
+  renderScan();
+  try {
+    // No GATT connection, identity guess, manufacturer claim, or fabricated RSSI.
+    const device = await bluetooth!.requestDevice({ acceptAllDevices: true });
+    if (generation !== sessionGeneration) return;
+    const now = new Date().toISOString();
+    const existing = devices.find((d) => d.id === deviceKeys.get(device.id));
+    if (existing) {
+      existing.lastSelectedAt = now;
+      existing.selections++;
+      toast("같은 기기의 선택 시각을 갱신했습니다.");
+    } else {
+      const record: DeviceRecord = {
+        id: crypto.randomUUID(),
+        name: (device.name || "이름을 제공하지 않은 기기").slice(0, 120),
+        source: "browser-selection",
+        selectedAt: now,
+        lastSelectedAt: now,
+        selections: 1,
+        zone: zoneAtRequest,
+        disposition: "unreviewed",
+        preparation: preparationAtRequest,
+      };
+      deviceKeys.set(device.id, record.id);
+      devices.push(record);
+      toast("선택한 기기를 기록했습니다. 실물과 허용 여부를 확인하세요.");
+    }
+    $("#scan-message").textContent =
+      "선택한 기기 정보만 기록했습니다. 신호 세기·제조사·소유자는 확인되지 않았습니다.";
+  } catch (error) {
+    if (generation !== sessionGeneration) return;
+    const name = error instanceof DOMException ? error.name : "";
+    $("#scan-message").textContent =
+      name === "NotFoundError"
+        ? "기기를 선택하지 않았습니다. 취소·검색 시간 초과는 기기가 없다는 뜻이 아닙니다."
+        : name === "NotAllowedError" || name === "SecurityError"
+          ? "Bluetooth 권한이 허용되지 않았습니다. 브라우저와 운영체제 설정을 확인해 주세요."
+          : "기기 목록을 열지 못했습니다. Bluetooth 전원과 브라우저 지원 여부를 확인해 주세요.";
+  } finally {
+    pendingBluetooth = false;
+    renderScan();
+    renderDevices();
+  }
+});
+
+function time(iso: string) {
+  return new Date(iso).toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+const pad = (value: number) => String(value).padStart(2, "0");
+function renderDevices() {
+  const visible = devices.filter((d) =>
+    mode === "demo" ? d.source === "demo" : d.source !== "demo",
+  );
+  $("#device-count").textContent = pad(visible.length);
+  $("#followup-count").textContent = pad(
+    visible.filter((d) => d.disposition === "followup").length,
+  );
+  $("#allowed-count").textContent = pad(
+    visible.filter((d) => d.disposition === "allowed").length,
+  );
+  $("#list-count").textContent = String(visible.length);
+  $("#list-source").textContent =
+    mode === "demo"
+      ? "연습 데이터 · 실제 탐지 결과 아님 · 보고서에서 제외"
+      : "현장 점검 기록 · 이 탭에서만 유지";
+  $("#device-list").innerHTML = !visible.length
+    ? `<div class="empty-state">${icon("bluetooth")}<strong>아직 선택한 기기가 없습니다</strong><p>${mode === "demo" ? "연습 데이터를 불러와 점검 흐름을 확인하세요." : "준비 항목을 확인하고 기기 선택창을 열어보세요."}</p><span>빈 목록은 전자기기가 없다는 의미가 아닙니다.</span></div>`
+    : `<div class="table-scroll"><table><thead><tr><th>기기 이름 · 출처</th><th>확인 구역</th><th>확인 상태</th><th>선택 시각</th></tr></thead><tbody>${visible
+        .map(
+          (d) =>
+            `<tr><td><div class="device-name">${icon("bluetooth")}<div><strong>${esc(d.name)}</strong><small>${d.source === "demo" ? "연습 데이터" : "브라우저에서 직접 선택"} · ${d.selections}회 선택</small></div></div></td><td><select data-device-zone="${d.id}" aria-label="${esc(d.name)} 확인 구역">${zoneOptions(d.zone)}</select></td><td><select class="disposition ${d.disposition}" data-disposition="${d.id}" aria-label="${esc(d.name)} 확인 상태">${Object.entries(
+              DISPOSITIONS,
+            )
+              .map(
+                ([key, value]) =>
+                  `<option value="${key}" ${d.disposition === key ? "selected" : ""}>${value}</option>`,
+              )
+              .join(
+                "",
+              )}</select></td><td class="mono time-cell">${time(d.lastSelectedAt)}</td></tr>`,
+        )
+        .join("")}</tbody></table></div>`;
+  $("#nav-record-count").textContent = String(
+    devices.filter((d) => d.source !== "demo").length +
+      inspections.filter((i) => i.source !== "demo").length,
+  );
+}
+$("#device-list").addEventListener("change", (event) => {
+  const element = event.target as HTMLSelectElement;
+  const record = devices.find(
+    (d) => d.id === (element.dataset.deviceZone || element.dataset.disposition),
+  );
+  if (!record) return;
+  if (element.dataset.deviceZone) record.zone = element.value as Zone;
+  else {
+    record.disposition = element.value as Disposition;
+    renderDevices();
+  }
+});
+
+$("#camera-button").addEventListener("click", () => {
+  clearObservationSelection();
+  if (cameraState.source === "camera") optical.stopCamera();
+  else void optical.startCamera();
+});
+$("#image-button").addEventListener("click", () => $("#image-input").click());
+function clearObservationSelection() {
+  $$<HTMLInputElement>('[name="observation"]').forEach((input) => {
+    input.checked = false;
+  });
+}
+$("#image-input").addEventListener("change", async (event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (file) {
+    clearObservationSelection();
+    try {
+      await optical.loadImage(file);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "사진을 읽지 못했습니다.");
+    }
+  }
+  input.value = "";
+});
+$("#freeze-button").addEventListener("click", () => optical.freeze());
+$("#torch-button").addEventListener("click", () => void optical.toggleTorch());
+$("#camera-find-guide").addEventListener("click", () => {
+  const frame = optical.snapshot();
+  if (!frame) {
+    toast("카메라나 직접 연 사진을 먼저 준비해 주세요.");
+    return;
+  }
+  navigate("guide");
+  photoSearch.loadFrame(frame);
+});
+$$("[data-filter]").forEach((button) =>
+  button.addEventListener("click", () => {
+    optical.filter = button.dataset.filter as Filter;
+    $$("[data-filter]").forEach((item) => {
+      const selected = item === button;
+      item.classList.toggle("selected", selected);
+      item.setAttribute("aria-pressed", String(selected));
+    });
+    $("#filter-badge").textContent = FILTER_LABELS[optical.filter];
+    ($("#threshold-range") as HTMLInputElement).disabled =
+      optical.filter !== "contrast";
+    optical.render();
+  }),
+);
+$("#zoom-range").addEventListener("input", (event) => {
+  optical.zoom = Number((event.target as HTMLInputElement).value);
+  $("#zoom-label").textContent = $("#zoom-value").textContent =
+    `${optical.zoom.toFixed(1)}×`;
+  optical.render();
+});
+$("#threshold-range").addEventListener("input", (event) => {
+  optical.threshold = Number((event.target as HTMLInputElement).value);
+  $("#threshold-value").textContent = String(optical.threshold);
+  optical.render();
+});
+$$("[data-sample]").forEach((button) =>
+  button.addEventListener("click", () => {
+    clearObservationSelection();
+    $$("[data-sample]").forEach((item) => {
+      item.classList.toggle("selected", item === button);
+      item.setAttribute("aria-pressed", String(item === button));
+    });
+    optical
+      .setSample(asset(`sample-${button.dataset.sample}.svg`))
+      .catch(() => toast("이미지를 불러오지 못했습니다."));
+  }),
+);
+$("#save-observation").addEventListener("click", () => {
+  const observations = $$<HTMLInputElement>('[name="observation"]:checked').map(
+    (input) => observationLabels[Number(input.value)]!,
+  );
+  inspections.push({
+    id: crypto.randomUUID(),
+    source: cameraState.source,
+    createdAt: new Date().toISOString(),
+    zone: ($("#optical-zone") as HTMLSelectElement).value as Zone,
+    observations,
+  });
+  clearObservationSelection();
+  renderDevices();
+  toast(
+    cameraState.source === "demo"
+      ? "연습 관찰을 기록했습니다. 현장 보고서에서는 제외됩니다."
+      : "관찰 내용을 기록했습니다. 사진·영상은 저장하지 않았습니다.",
+  );
+});
+
+function renderGuides() {
+  const query = ($("#guide-search") as HTMLInputElement).value
+    .trim()
+    .toLocaleLowerCase();
+  const visible = guides.filter(
+    (g) =>
+      (guideCategory === "all" || g.category === guideCategory) &&
+      `${g.name} ${g.label} ${g.description} ${g.points.join(" ")}`
+        .toLocaleLowerCase()
+        .includes(query),
+  );
+  $("#guide-grid").innerHTML = visible.length
+    ? visible
+        .map(
+          (g, i) =>
+            `<button class="guide-card" data-guide="${g.id}"><div class="guide-art"><span class="art-number">${String(i + 1).padStart(2, "0")}</span><img src="${asset(`sample-${g.sample}.svg`)}" alt="${esc(g.name)} 관찰 위치를 설명하는 도식"/><span class="art-caption">관찰용 도식 · 실물 사진 아님</span></div><div class="guide-card-copy"><span class="badge">${g.label}</span><h2>${g.name}${icon("arrow")}</h2><p>${g.description}</p><span class="guide-read">관찰 포인트 ${g.points.length}개 ${icon("external")}</span></div></button>`,
+        )
+        .join("")
+    : '<div class="empty-state"><strong>검색 결과가 없습니다</strong><p>다른 기종명이나 특징으로 검색해 주세요.</p></div>';
+}
+$$("[data-category]").forEach((button) =>
+  button.addEventListener("click", () => {
+    guideCategory = button.dataset.category!;
+    $$("[data-category]").forEach((item) => {
+      item.classList.toggle("selected", item === button);
+      item.setAttribute("aria-pressed", String(item === button));
+    });
+    renderGuides();
+  }),
+);
+$("#guide-search").addEventListener("input", renderGuides);
+$("#page-guide").addEventListener("click", (event) => {
+  const card = (event.target as Element).closest<HTMLElement>("[data-guide]");
+  if (!card) return;
+  const guide = guides.find((g) => g.id === card.dataset.guide)!;
+  openDialog(
+    `<div class="eyebrow">3-SECOND FIELD REFERENCE</div><h2 id="dialog-title">${guide.name}</h2><span class="badge">${guide.label}</span><p class="glance-strip">${guide.glance}</p><div class="atlas-view"><img class="dialog-glasses" src="${asset(`sample-${guide.sample}.svg`)}" alt="${esc(guide.name)} 관찰 위치 도식"/><span>관찰용 도식 · 크기·부품 형상은 실물과 다를 수 있습니다</span></div><div class="atlas-features">${guide.features.map((feature, i) => `<article><span class="feature-number">0${i + 1}</span><div><small>${feature.location}</small><h3>${feature.title}</h3><p>${feature.detail}</p></div></article>`).join("")}</div><dl class="atlas-details"><dt>모델 표기 대조</dt><dd>${guide.marks}</dd><dt>기능·전원 확인</dt><dd>${guide.power}</dd><dt>닮은 외형 주의</dt><dd>${guide.comparison}</dd></dl><p class="dialog-note">${guide.caveat}</p><div class="button-row"><a class="button secondary" href="${guide.source}" target="_blank" rel="noopener noreferrer">${guide.sourceLabel} ${icon("external")}</a>${guide.sourcePhoto ? `<a class="text-button" href="${guide.sourcePhoto}" target="_blank" rel="noopener noreferrer">실물 사진 확인 ${icon("external")}</a>` : ""}</div>`,
+  );
+});
+
+$("#radio-import").addEventListener("click", () => $("#radio-input").click());
+$("#radio-input").addEventListener("change", async (event) => {
+  const input = event.target as HTMLInputElement,
+    file = input.files?.[0];
+  if (file) {
+    try {
+      if (file.size > 1_000_000)
+        throw new Error("1 MB 이하의 JSON 파일을 선택해 주세요.");
+      const generation = sessionGeneration;
+      const next = parseRadioCapture(await file.text());
+      if (generation !== sessionGeneration) return;
+      radioCapture = next;
+      $("#radio-message").textContent = "";
+      renderRadio();
+      toast(
+        next.isDemo
+          ? "연습용 측정 파일을 열었습니다."
+          : "외부 측정 파일을 열었습니다. 파일의 출처와 측정 조건을 확인하세요.",
+      );
+    } catch (error) {
+      $("#radio-message").textContent =
+        error instanceof Error ? error.message : "측정 파일을 읽지 못했습니다.";
+    }
+  }
+  input.value = "";
+});
+$("#radio-demo").addEventListener("click", async () => {
+  try {
+    const generation = sessionGeneration;
+    const response = await fetch(asset("radio-example.json"));
+    if (!response.ok) throw new Error();
+    const data = parseRadioCapture(await response.text());
+    if (generation !== sessionGeneration) return;
+    radioCapture = data;
+    $("#radio-message").textContent = "";
+    renderRadio();
+  } catch {
+    toast("예제 파일을 읽지 못했습니다. 연결 상태를 확인해 주세요.");
+  }
+});
+function renderRadio() {
+  if (!radioCapture) {
+    $("#radio-results").innerHTML =
+      `<div class="panel empty-state">${icon("map")}<strong>측정 파일을 기다리고 있습니다</strong><p>JSON 파일을 열거나 연습 예제로 구역 비교를 살펴보세요.</p></div>`;
+    return;
+  }
+  const summaries = summarizeRadio(radioCapture);
+  $("#radio-results").innerHTML =
+    `<div class="radio-source"><span class="badge ${radioCapture.isDemo ? "amber-badge" : "mint-badge"}">${radioCapture.isDemo ? "연습 데이터 · 실제 측정 아님" : "외부 파일 · 출처 직접 확인 필요"}</span><span>${esc(radioCapture.source)} · ${radioCapture.samples.length}개 측정값</span></div><div class="radio-grid">${summaries.map((summary) => `<article class="panel signal-card"><div class="section-heading"><h2>${icon("bluetooth")}${esc(summary.name)}</h2></div><p class="tiny">파일 내 기기 키: ${esc(summary.deviceKey)} · 소유자 미확인</p><div class="signal-bars">${summary.zones.map((zone) => `<div class="signal-row"><span>${esc(zone.zone)}</span><div class="signal-track"><div style="width:${Math.max(3, Math.min(100, ((zone.median + 127) / 147) * 100))}%"></div></div><strong>${zone.median} <small>dBm</small></strong><small>${zone.count}회 · ${zone.min}~${zone.max}</small></div>`).join("")}</div><p class="signal-conclusion">${summary.comparable ? `3회 이상 측정 구역 중 중앙값이 가장 높은 곳: <strong>${esc(summary.strongestRepeatedZone!)}</strong>` : "비교 자료 부족 · 2개 이상의 구역에서 각각 3회 이상 측정하세요."}</p><p class="tiny">구역은 측정한 위치입니다. 송신기 위치나 소유자의 좌석을 뜻하지 않습니다.</p></article>`).join("")}</div>`;
+}
+
+function renderRecords() {
+  const realDevices = devices.filter((d) => d.source !== "demo"),
+    realInspections = inspections.filter((i) => i.source !== "demo");
+  const training =
+    devices.filter((d) => d.source === "demo").length +
+    inspections.filter((i) => i.source === "demo").length;
+  $("#record-summary").innerHTML =
+    `<div class="stat-card"><span>현장 기기 기록</span><strong>${pad(realDevices.length)}</strong><small>브라우저에서 선택한 기기</small></div><div class="stat-card"><span>현장 관찰 기록</span><strong class="mint">${pad(realInspections.length)}</strong><small>카메라·직접 연 사진 관찰</small></div><div class="stat-card"><span>보고서에서 제외</span><strong class="amber">${pad(training)}</strong><small>연습 기기·도식 관찰 기록</small></div>`;
+  const records = [
+    ...devices.map((d) => ({
+      createdAt: d.lastSelectedAt,
+      isDemo: d.source === "demo",
+      title: d.name,
+      detail: `${d.zone} · ${DISPOSITIONS[d.disposition]} · ${d.source === "demo" ? "가상 기기" : "브라우저 선택"}`,
+      symbol: "bluetooth",
+    })),
+    ...inspections.map((i) => ({
+      createdAt: i.createdAt,
+      isDemo: i.source === "demo",
+      title: `광학 관찰 · ${i.observations.length}개 항목`,
+      detail: `${i.zone} · ${i.source === "demo" ? "연습 도식" : i.source === "camera" ? "카메라 관찰" : "사진 관찰"} · ${i.observations.join(", ") || "관찰 항목 없음 (정상 판정 아님)"}`,
+      symbol: "camera",
+    })),
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  $("#all-records").innerHTML = records.length
+    ? `<ul class="record-list">${records.map((record) => `<li><span class="record-icon">${icon(record.symbol)}</span><div><strong>${esc(record.title)} ${record.isDemo ? '<span class="badge amber-badge">연습</span>' : ""}</strong><p>${esc(record.detail)}</p></div><time>${time(record.createdAt)}</time></li>`).join("")}</ul>`
+    : '<div class="empty-state"><strong>이번 점검에 아직 기록이 없습니다</strong><p>무선 기기를 선택하거나 광학 관찰 내용을 기록해 보세요.</p></div>';
+  if (radioCapture)
+    $("#all-records").insertAdjacentHTML(
+      "beforeend",
+      `<div class="capture-record">${icon("map")} 외부 수신기 기록: ${radioCapture.samples.length}개 측정값 · ${radioCapture.isDemo ? "연습용, 보고서 제외" : "사용자 제공 파일, 보고서 포함"}</div>`,
+    );
+}
+$("#export-report").addEventListener("click", () => {
+  const report = createReport(preflight, devices, inspections, radioCapture);
+  const blob = new Blob([JSON.stringify(report, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob),
+    link = document.createElement("a");
+  link.href = url;
+  link.download = `examguard-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("현장 기록을 내보냈습니다. 연습 데이터와 이미지는 제외했습니다.");
+});
+$("#reset-button").addEventListener("click", () => {
+  openDialog(
+    '<div class="eyebrow">NEW INSPECTION</div><h2 id="dialog-title">새 점검을 시작할까요?</h2><p class="dialog-note">현재 기기·관찰·측정 기록과 준비 상태가 지워집니다. 필요한 기록은 먼저 보고서로 내려받으세요.</p><div class="button-row"><button class="button secondary" id="cancel-reset">돌아가기</button><button class="button primary" id="confirm-reset">기록 비우고 시작</button></div>',
+  );
+  $("#cancel-reset").addEventListener("click", () => dialog.close());
+  $("#confirm-reset").addEventListener("click", () => {
+    sessionGeneration++;
+    devices = [];
+    inspections = [];
+    radioCapture = null;
+    deviceKeys.clear();
+    preflight.fill(false);
+    mode = "live";
+    optical.stopCamera();
+    photoSearch.clear();
+    clearObservationSelection();
+    ($("#current-zone") as HTMLSelectElement).value = "미지정";
+    ($("#optical-zone") as HTMLSelectElement).value = "미지정";
+    $("#scan-message").textContent = "";
+    $("#radio-message").textContent = "";
+    updatePreparation();
+    renderDevices();
+    renderRadio();
+    renderRecords();
+    dialog.close();
+    navigate("wireless");
+    toast("새 점검을 시작했습니다.");
+  });
+});
+function showHelp() {
+  openDialog(
+    `<div class="eyebrow">QUICK START</div><h2 id="dialog-title">ExamGuard 사용 가이드</h2><ol class="help-steps"><li><strong>휴대전화 전원 종료·전자기기 수거</strong><p>잠금·무음과 전원 종료를 구분하고 허용된 감독 장비를 확인합니다.</p></li><li><strong>Bluetooth 목록에서 기기를 선택</strong><p>지원 브라우저에서 기기를 하나씩 선택합니다. 브라우저가 보여주지 않은 기기나 소유자·RSSI는 알 수 없습니다.</p></li><li><strong>구역과 실물을 확인</strong><p>신호가 의심되면 담당자 절차에 따라 실물을 대조합니다. 광학 필터와 도감은 육안 관찰을 돕습니다.</p></li><li><strong>기록하고 담당자에게 전달</strong><p>확인 구역과 허용 여부를 기록합니다. 최종 판단은 시험 주관기관이 합니다.</p></li></ol><div class="dialog-note"><strong>오프라인 준비</strong><p>인터넷에 연결한 상태에서 앱을 한 번 열고 상단의 ‘기본 도감 오프라인 준비 완료’를 확인하세요. 사진 대조 모델은 첫 대조 때 별도로 내려받습니다. 모델 다운로드와 대조를 마친 뒤 오프라인에서도 시험해 보세요. 브라우저가 캐시를 비우면 재다운로드가 필요합니다. 카메라·Bluetooth 권한과 하드웨어는 별도로 필요합니다. 비행기 모드에서 Bluetooth가 꺼지면 기기 선택은 작동하지 않습니다.</p><strong>기록과 개인정보</strong><p>서버 전송·분석 추적 기능이 없습니다. 기록은 메모리에만 두며 새로고침하면 사라집니다. 내려받은 보고서는 사용자가 직접 관리합니다. 웹 호스팅 제공자의 접속 로그는 별개입니다.</p></div>`,
+  );
+}
+$("#help-button").addEventListener("click", showHelp);
+$("#handoff-button").addEventListener("click", () =>
+  openDialog(
+    `<div class="eyebrow">VERIFY & HAND OVER</div><h2 id="dialog-title">발견 기기 확인·인계</h2><ol class="help-steps"><li><strong>허용 장비부터 구분</strong><p>감독 장비·보조기기·교실 밖 신호를 확인합니다. 기기 이름을 학생 이름으로 해석하지 않습니다.</p></li><li><strong>실물 확인 이유 안내</strong><p>“전자기기 여부 확인을 위해 안경의 모델 표기와 부품을 확인하겠습니다.” 기관 절차에 따라 책상 위 안경을 대조합니다.</p></li><li><strong>부품과 제품 표기 확인</strong><p>카메라·충전부·렌즈 구조를 기록합니다. 외형만으로 전원 상태·사용 행위를 추측하지 않습니다.</p></li><li><strong>담당자가 소지자 확인·인계</strong><p>소지자 확인과 보관은 기관 절차로 진행합니다. BLE 이름·RSSI·사진 후보는 소유자의 증거가 아닙니다. 보고서는 관찰 참고 기록입니다.</p></li></ol>`,
+  ),
+);
+interface InstallEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: string }>;
+}
+let installPrompt: InstallEvent | null = null;
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  installPrompt = event as InstallEvent;
+});
+$("#install-button").addEventListener("click", async () => {
+  if (installPrompt) {
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    installPrompt = null;
+  } else
+    openDialog(
+      '<div class="eyebrow">INSTALL EXAMGUARD</div><h2 id="dialog-title">홈 화면에서 바로 열기</h2><p class="dialog-note">Android·데스크톱의 지원 브라우저에서는 메뉴의 ‘앱 설치’를, iPhone·iPad에서는 Safari의 공유 메뉴 → ‘홈 화면에 추가’를 사용하세요. 설치 메뉴는 브라우저와 실행 환경에 따라 다릅니다.</p><p>처음에는 인터넷에 연결해 ‘기본 도감 오프라인 준비 완료’를 확인하세요. 비공개 모드나 저장 공간 정리로 캐시가 사라지면 다시 연결해야 합니다.</p>',
+    );
+});
+function updateConnection() {
+  $("#connection-status").innerHTML =
+    `<span class="status-dot ${navigator.onLine ? "" : "offline-dot"}"></span> ${offlineReady ? (navigator.onLine ? "기본 도감 오프라인 준비 완료" : "기본 도감 오프라인 사용 중") : import.meta.env.DEV ? "개발 미리보기" : navigator.onLine ? "오프라인 준비 중" : "오프라인 캐시 미확인"}`;
+}
+window.addEventListener("online", updateConnection);
+window.addEventListener("offline", updateConnection);
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  navigator.serviceWorker
+    .register(asset("sw.js"), { scope: import.meta.env.BASE_URL })
+    .then(async () => {
+      const registration = await navigator.serviceWorker.ready;
+      const channel = new MessageChannel();
+      channel.port1.onmessage = (event) => {
+        offlineReady = event.data?.ready === true;
+        updateConnection();
+        channel.port1.close();
+      };
+      registration.active?.postMessage("CACHE_STATUS", [channel.port2]);
+    })
+    .catch(() => {
+      $("#connection-status").textContent = "오프라인 준비 실패 · 연결 필요";
+    });
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    optical.setActive(false);
+    photoSearch.suspend();
+  } else optical.setActive(currentPage === "optical");
+});
+window.addEventListener("pagehide", () => {
+  optical.setActive(false);
+  photoSearch.cancel(false);
+});
+updatePreparation();
+renderDevices();
+renderGuides();
+renderRadio();
+renderRecords();
+updateConnection();
+navigate((location.hash.slice(1) || "wireless") as Page, false);
