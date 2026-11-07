@@ -1,5 +1,6 @@
 import { analyzeSignatures, parseAdvertisement } from "./signatures.ts";
 import type { Advertisement, SignatureRuleSet } from "./signatures.ts";
+import { assessDeviceName } from "./device-hints.ts";
 
 export type Zone =
   "미지정" | "교탁" | "창가" | "가운데" | "복도 쪽" | "교실 밖";
@@ -211,6 +212,7 @@ export function createReport(
       .filter((d) => d.source !== "demo")
       .map((d) => ({
         ...d,
+        nameAssessment: assessDeviceName(d.name),
         rssi: null,
         manufacturer: null,
         owner: null,

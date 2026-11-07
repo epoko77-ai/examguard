@@ -169,6 +169,75 @@ test("browser selection escaping, explicit classification and reset ignore delay
   );
   await expect(page.locator("#device-count")).toHaveText("00");
 });
+test("selected devices show explainable name hints and candidate filtering never changes permission decisions", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    let index = 0;
+    const names = [
+      "Ray-Ban Meta",
+      "Meta Quest 3",
+      "AirPods Pro",
+      "Unknown",
+      "Meta",
+      "Meta Quest 3",
+    ];
+    Object.defineProperty(navigator, "bluetooth", {
+      configurable: true,
+      value: {
+        requestDevice: async () => {
+          const i = index++;
+          return { id: `mock-${i === 5 ? 0 : i}`, name: names[i] };
+        },
+      },
+    });
+  });
+  await page.goto("./#wireless");
+  for (const button of await page.locator("[data-preflight]").all())
+    await button.click();
+  for (let i = 1; i <= 5; i++) {
+    await page.locator("#scan-button").click();
+    await expect(page.locator("#device-count")).toHaveText(`0${i}`);
+  }
+  await expect(
+    page.locator('[data-device-hint="glasses-candidate"]'),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('[data-device-hint="other-device-hint"]'),
+  ).toHaveCount(2);
+  await expect(page.locator('[data-device-hint="unknown"]')).toHaveCount(2);
+  await expect(page.locator("#device-hint-summary")).toContainText(
+    "의심 후보 1",
+  );
+  for (const field of await page.locator("[data-disposition]").all())
+    await expect(field).toHaveValue("unreviewed");
+  await takeShot(page, {
+    path: testInfo.outputPath("name-hints.png"),
+    fullPage: true,
+  });
+  await page.locator("#device-hint-filter").selectOption("glasses-candidate");
+  await expect(page.locator("#device-list tbody tr")).toHaveCount(1);
+  const exported = await report(page);
+  expect(exported.devices).toHaveLength(5);
+  expect(exported.devices[0].nameAssessment.kind).toBe("glasses-candidate");
+  expect(
+    exported.devices.every(
+      (d: { disposition: string }) => d.disposition === "unreviewed",
+    ),
+  ).toBe(true);
+  await go(page, "wireless");
+  await page.locator("#scan-button").click();
+  await expect(page.locator("#device-hint-summary")).toContainText(
+    "의심 후보 0",
+  );
+  await expect(page.locator("#device-count")).toHaveText("05");
+  await expect(page.locator("#device-list")).toContainText(
+    "이 분류에 해당하는 기기가 없습니다",
+  );
+  await page.locator("#reset-button").click();
+  await page.locator("#confirm-reset").click();
+  await expect(page.locator("#device-hint-filter")).toHaveValue("all");
+});
 test("camera denial falls back to image, filters can be used and photo search opens with the frame", async ({
   page,
 }) => {

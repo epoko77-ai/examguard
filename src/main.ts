@@ -28,6 +28,7 @@ import { guides, observationLabels } from "./data/guides";
 import { parseSignatureRules } from "./lib/signatures";
 import type { SignatureRuleSet } from "./lib/signatures";
 import { renderSignatureResults } from "./lib/signature-panel";
+import { assessDeviceName } from "./lib/device-hints";
 
 type Page = "wireless" | "optical" | "guide" | "zones" | "records";
 type BrowserDevice = { id: string; name?: string };
@@ -100,6 +101,7 @@ let devices: DeviceRecord[] = [];
 let inspections: Inspection[] = [];
 let radioCapture: RadioCapture | null = null;
 let signatureRules: SignatureRuleSet | null = null;
+let deviceHintFilter = "all";
 let pendingBluetooth = false;
 let sessionGeneration = 0;
 let cameraState: OpticalState = {
@@ -156,7 +158,7 @@ $("#app").innerHTML = `
             <div class="panel-footnote">${icon("info")} <span>기기 선택창은 브라우저가 보여줍니다. 선택한 기기만 기록하며 페어링·인터넷 사용 여부는 확인되지 않습니다.</span></div><div class="ble-help-link"><button class="text-button" id="ble-help">이 모드의 탐색 방식과 확인 범위 ${icon("arrow")}</button></div>
           </article>
           <div class="stat-grid"><div class="stat-card"><span>선택한 기기</span><strong id="device-count">00</strong><small>전체 주변 기기 수가 아닙니다</small></div><div class="stat-card"><span>추가 확인 필요</span><strong class="amber" id="followup-count">00</strong><small>감독관이 표시한 항목</small></div><div class="stat-card"><span>허용 장비로 확인</span><strong class="mint" id="allowed-count">00</strong><small>확인 후 직접 분류한 장비</small></div></div>
-          <article class="panel"><div class="panel-header"><h2>기기 확인 목록 <span class="count-badge" id="list-count">0</span></h2><label class="zone-picker">현재 확인 구역 <select id="current-zone" aria-label="현재 확인 구역">${zoneOptions()}</select></label></div><div id="device-list"></div><div class="list-footer"><span id="list-source">현장 점검 기록 · 이 탭에서만 유지</span><button class="text-button" data-page="records">전체 기록 ${icon("arrow")}</button></div></article>
+          <article class="panel"><div class="panel-header"><h2>기기 확인 목록 <span class="count-badge" id="list-count">0</span></h2><label class="zone-picker">현재 확인 구역 <select id="current-zone" aria-label="현재 확인 구역">${zoneOptions()}</select></label></div><div class="device-hint-controls"><label>이름 단서로 보기 <select id="device-hint-filter" aria-label="기기 이름 단서 필터"><option value="all">전체 기기</option><option value="glasses-candidate">스마트안경 의심 후보</option><option value="other-device-hint">다른 전자기기 이름 단서</option><option value="unknown">종류 미확인</option></select></label><p id="device-hint-summary" role="status"></p><small>선택한 기기의 이름으로 1차 분류합니다. 이름은 변경될 수 있으며, 회사명만으로 안경을 판정하지 않습니다. 브라우저 선택창 전체를 분류하는 기능은 아닙니다.</small></div><div id="device-list"></div><div class="list-footer"><span id="list-source">현장 점검 기록 · 이 탭에서만 유지</span><button class="text-button" data-page="records">전체 기록 ${icon("arrow")}</button></div></article>
         </div><aside class="context-column">
           <article class="panel workflow-panel"><div class="section-heading"><h2>현장 점검 순서</h2><span class="badge">4 STEPS</span></div><ol class="workflow">${[
             ["전원 종료·수거", "휴대전화와 전자기기 수거를 먼저 확인합니다."],
@@ -405,8 +407,8 @@ $("#scan-button").addEventListener("click", async () => {
     const now = new Date().toISOString();
     devices.push(
       ...[
-        "스마트안경 후보 · 가상 예시",
-        "감독용 장비 · 가상 예시",
+        "Ray-Ban Meta · 가상 예시",
+        "AirPods Pro · 가상 예시",
         "이름 없는 기기 · 가상 예시",
       ].map((name, i): DeviceRecord => ({
         id: crypto.randomUUID(),
@@ -439,6 +441,10 @@ $("#scan-button").addEventListener("click", async () => {
     const now = new Date().toISOString();
     const existing = devices.find((d) => d.id === deviceKeys.get(device.id));
     if (existing) {
+      existing.name = (device.name || "이름을 제공하지 않은 기기").slice(
+        0,
+        120,
+      );
       existing.lastSelectedAt = now;
       existing.selections++;
       toast("같은 기기의 선택 시각을 갱신했습니다.");
@@ -459,7 +465,7 @@ $("#scan-button").addEventListener("click", async () => {
       toast("선택한 기기를 기록했습니다. 실물과 허용 여부를 확인하세요.");
     }
     $("#scan-message").textContent =
-      "선택한 기기 정보만 기록했습니다. 신호 세기·제조사·소유자는 확인되지 않았습니다.";
+      `${assessDeviceName(device.name || "").label} · 아래 목록에서 이름 단서와 근거를 확인하세요. 신호 세기·소유자는 확인되지 않았습니다.`;
   } catch (error) {
     if (generation !== sessionGeneration) return;
     const name = error instanceof DOMException ? error.name : "";
@@ -485,6 +491,14 @@ function time(iso: string) {
   });
 }
 const pad = (value: number) => String(value).padStart(2, "0");
+function renderDeviceHint(name: string) {
+  const hint = assessDeviceName(name);
+  return `<div class="device-hint ${hint.kind}" data-device-hint="${hint.kind}"><strong>${hint.label}</strong><p>${esc(hint.reason)}</p>${hint.kind === "glasses-candidate" ? '<a class="text-button" href="#guide">실물 도감 대조 →</a>' : ""}</div>`;
+}
+$("#device-hint-filter").addEventListener("change", (event) => {
+  deviceHintFilter = (event.target as HTMLSelectElement).value;
+  renderDevices();
+});
 function renderDevices() {
   const visible = devices.filter((d) =>
     mode === "demo" ? d.source === "demo" : d.source !== "demo",
@@ -501,23 +515,42 @@ function renderDevices() {
     mode === "demo"
       ? "연습 데이터 · 실제 탐지 결과 아님 · 보고서에서 제외"
       : "현장 점검 기록 · 이 탭에서만 유지";
+  const hints = visible.map((device) => ({
+    device,
+    hint: assessDeviceName(device.name),
+  }));
+  $("#device-hint-summary").textContent =
+    `의심 후보 ${hints.filter((r) => r.hint.kind === "glasses-candidate").length} · 다른 기기 이름 단서 ${hints.filter((r) => r.hint.kind === "other-device-hint").length} · 종류 미확인 ${hints.filter((r) => r.hint.kind === "unknown").length}`;
+  const priority = {
+    "glasses-candidate": 0,
+    unknown: 1,
+    "other-device-hint": 2,
+  };
+  const filtered = hints
+    .filter(
+      (r) => deviceHintFilter === "all" || r.hint.kind === deviceHintFilter,
+    )
+    .sort((a, b) => priority[a.hint.kind] - priority[b.hint.kind])
+    .map((r) => r.device);
   $("#device-list").innerHTML = !visible.length
     ? `<div class="empty-state">${icon("bluetooth")}<strong>아직 선택한 기기가 없습니다</strong><p>${mode === "demo" ? "연습 데이터를 불러와 점검 흐름을 확인하세요." : "준비 항목을 확인하고 기기 선택창을 열어보세요."}</p><span>빈 목록은 전자기기가 없다는 의미가 아닙니다.</span></div>`
-    : `<div class="table-scroll"><table><thead><tr><th>기기 이름 · 출처</th><th>확인 구역</th><th>확인 상태</th><th>선택 시각</th></tr></thead><tbody>${visible
-        .map(
-          (d) =>
-            `<tr><td><div class="device-name">${icon("bluetooth")}<div><strong>${esc(d.name)}</strong><small>${d.source === "demo" ? "연습 데이터" : "브라우저에서 직접 선택"} · ${d.selections}회 선택</small></div></div></td><td><select data-device-zone="${d.id}" aria-label="${esc(d.name)} 확인 구역">${zoneOptions(d.zone)}</select></td><td><select class="disposition ${d.disposition}" data-disposition="${d.id}" aria-label="${esc(d.name)} 확인 상태">${Object.entries(
-              DISPOSITIONS,
-            )
-              .map(
-                ([key, value]) =>
-                  `<option value="${key}" ${d.disposition === key ? "selected" : ""}>${value}</option>`,
+    : !filtered.length
+      ? `<div class="empty-state"><strong>이 분류에 해당하는 기기가 없습니다</strong><p>전체 기기로 돌아가 다른 단서와 미확인 기기를 확인하세요.</p></div>`
+      : `<div class="table-scroll"><table><thead><tr><th>기기 이름 · 출처 · 의심 단서</th><th>확인 구역</th><th>확인 상태</th><th>선택 시각</th></tr></thead><tbody>${filtered
+          .map(
+            (d) =>
+              `<tr><td><div class="device-name">${icon("bluetooth")}<div><strong>${esc(d.name)}</strong><small>${d.source === "demo" ? "연습 데이터" : "브라우저에서 직접 선택"} · ${d.selections}회 선택</small></div></div>${renderDeviceHint(d.name)}</td><td><select data-device-zone="${d.id}" aria-label="${esc(d.name)} 확인 구역">${zoneOptions(d.zone)}</select></td><td><select class="disposition ${d.disposition}" data-disposition="${d.id}" aria-label="${esc(d.name)} 확인 상태">${Object.entries(
+                DISPOSITIONS,
               )
-              .join(
-                "",
-              )}</select></td><td class="mono time-cell">${time(d.lastSelectedAt)}</td></tr>`,
-        )
-        .join("")}</tbody></table></div>`;
+                .map(
+                  ([key, value]) =>
+                    `<option value="${key}" ${d.disposition === key ? "selected" : ""}>${value}</option>`,
+                )
+                .join(
+                  "",
+                )}</select></td><td class="mono time-cell">${time(d.lastSelectedAt)}</td></tr>`,
+          )
+          .join("")}</tbody></table></div>`;
   $("#nav-record-count").textContent = String(
     devices.filter((d) => d.source !== "demo").length +
       inspections.filter((i) => i.source !== "demo").length,
@@ -848,6 +881,8 @@ $("#reset-button").addEventListener("click", () => {
     inspections = [];
     radioCapture = null;
     signatureRules = null;
+    deviceHintFilter = "all";
+    $<HTMLSelectElement>("#device-hint-filter").value = "all";
     $("#signature-message").textContent = "";
     deviceKeys.clear();
     preflight.fill(false);
