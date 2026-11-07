@@ -97,7 +97,7 @@ let toastTimer: ReturnType<typeof setTimeout>;
 
 $("#app").innerHTML = `
   <aside class="sidebar">
-    <a href="#wireless" class="brand" aria-label="ExamGuard 홈"><span class="brand-symbol">${icon("shield")}</span><span>Exam<span class="mint">Guard</span><small>시험의 공정함을 지키는 도구</small></span></a>
+    <a href="#guide" class="brand" aria-label="ExamGuard 홈"><span class="brand-symbol">${icon("shield")}</span><span>Exam<span class="mint">Guard</span><small>시험의 공정함을 지키는 도구</small></span></a>
     <div class="workspace-label"><span class="status-dot"></span> INSPECTION WORKSPACE</div>
     <nav aria-label="주 메뉴">${nav.map((item, i) => `<button class="nav-item ${i === 0 ? "active" : ""}" data-page="${item.page}" ${i === 0 ? 'aria-current="page"' : ""}>${icon(item.icon)}<span>${item.title}</span>${item.page === "records" ? '<span id="nav-record-count" class="nav-count">0</span>' : ""}</button>`).join("")}</nav>
     <div class="sidebar-bottom">
@@ -839,4 +839,4 @@ renderGuides();
 renderRadio();
 renderRecords();
 updateConnection();
-navigate((location.hash.slice(1) || "wireless") as Page, false);
+navigate((location.hash.slice(1) || "guide") as Page, false);

@@ -18,6 +18,10 @@ async function walk(dir) {
   return paths;
 }
 await mkdir("dist/previews", { recursive: true });
+await writeFile(
+  "dist/previews/README.txt",
+  "ExamGuard test screenshots. App and diagrams: MIT. The photo visible in photo-results screenshots is CCadio's Ray-Ban Meta Gen 1 smart glasses with charging case, cropped; CC BY 4.0. Source: https://commons.wikimedia.org/wiki/File:Ray-Ban_Meta_Gen_1_smart_glasses_with_charging_case.jpg License: https://creativecommons.org/licenses/by/4.0/ No endorsement implied. More: https://github.com/epoko77-ai/examguard/blob/main/docs/THIRD_PARTY.md\n",
+);
 const files = await walk("test-results");
 for (const [project, label] of [
   ["chromium", "desktop"],

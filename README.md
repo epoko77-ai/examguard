@@ -6,6 +6,10 @@
 
 > 현장 검증 전 프로토타입입니다. 사진 검색 결과는 닮은 도감 후보이며, 기종·소유자·부정행위의 확정 판정이 아닙니다.
 
+![ExamGuard 사진 대조와 도감 후보 화면](https://epoko77-ai.github.io/examguard/previews/desktop-photo-results.png)
+
+실제 브라우저 테스트 화면. 예제 안경 사진: [CCadio, CC BY 4.0](https://commons.wikimedia.org/wiki/File:Ray-Ban_Meta_Gen_1_smart_glasses_with_charging_case.jpg), 크롭. [모바일 화면](https://epoko77-ai.github.io/examguard/previews/mobile-guide.png) · [검증 범위](docs/VERIFICATION.md)
+
 ## 할 수 있는 일
 
 | 기능 | 실제 동작 |

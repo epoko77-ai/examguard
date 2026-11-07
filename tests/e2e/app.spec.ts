@@ -4,6 +4,24 @@ import { readFile } from "node:fs/promises";
 const go = async (page: Page, tab: string) => {
   await page.locator(`.nav-item[data-page="${tab}"]`).click();
 };
+async function takeShot(
+  page: Page,
+  options: { path: string; fullPage: boolean },
+) {
+  if (options.fullPage) {
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement)?.blur();
+      window.scrollTo(0, 0);
+    });
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+  }
+  await page.screenshot(options);
+}
 async function report(page: Page) {
   await go(page, "records");
   const download = page.waitForEvent("download");
@@ -19,6 +37,8 @@ test("core UI, preflight, training records, catalog, mobile layout and offline r
   const requested: string[] = [];
   page.on("request", (r) => requested.push(r.url()));
   await page.goto("./");
+  await expect(page.locator("#page-title")).toHaveText("스마트안경 도감");
+  await go(page, "wireless");
   await expect(page.locator("#page-title")).toHaveText("무선 기기 확인");
   await expect(page.locator("#scan-button")).toBeDisabled();
   await expect(page.locator("#connection-status")).toContainText(
@@ -27,7 +47,7 @@ test("core UI, preflight, training records, catalog, mobile layout and offline r
   expect(
     requested.some((url) => url.includes("/models/") || url.endsWith(".wasm")),
   ).toBe(false);
-  await page.screenshot({
+  await takeShot(page, {
     path: testInfo.outputPath("wireless.png"),
     fullPage: true,
   });
@@ -41,7 +61,7 @@ test("core UI, preflight, training records, catalog, mobile layout and offline r
   await expect(page.locator("#camera-find-guide")).toBeDisabled();
   await page.locator('[name="observation"]').first().check();
   await page.locator("#save-observation").click();
-  await page.screenshot({
+  await takeShot(page, {
     path: testInfo.outputPath("optical.png"),
     fullPage: true,
   });
@@ -56,13 +76,13 @@ test("core UI, preflight, training records, catalog, mobile layout and offline r
   await page.locator(".guide-card").click();
   await expect(page.locator(".atlas-features article")).toHaveCount(3);
   await expect(page.locator("dialog")).toContainText("TouchBar");
-  await page.screenshot({
+  await takeShot(page, {
     path: testInfo.outputPath("guide-detail.png"),
-    fullPage: true,
+    fullPage: false,
   });
   await page.locator(".dialog-close").click();
   await page.locator("#guide-search").fill("");
-  await page.screenshot({
+  await takeShot(page, {
     path: testInfo.outputPath("guide.png"),
     fullPage: true,
   });
@@ -95,7 +115,7 @@ test("browser selection escaping, explicit classification and reset ignore delay
       configurable: true,
     }),
   );
-  await page.goto("./");
+  await page.goto("./#wireless");
   for (const button of await page.locator("[data-preflight]").all())
     await button.click();
   await expect(page.locator("#scan-button")).toBeEnabled();
@@ -160,13 +180,11 @@ test("radio imports reject invalid data, show repeated-zone evidence and stay se
   await expect(page.locator(".signal-card")).toHaveCount(2);
   expect((await report(page)).radioCapture).toBeNull();
   await go(page, "zones");
-  await page
-    .locator("#radio-input")
-    .setInputFiles({
-      name: "bad.json",
-      mimeType: "application/json",
-      buffer: Buffer.from("{}"),
-    });
+  await page.locator("#radio-input").setInputFiles({
+    name: "bad.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{}"),
+  });
   await expect(page.locator("#radio-message")).toContainText("형식");
   const samples = [
     ...[-60, -61, -62].map((rssi) => ({ zone: "A", rssi })),
@@ -178,20 +196,18 @@ test("radio imports reject invalid data, show repeated-zone evidence and stay se
     name: "<script>unsafe</script>",
     timestamp: "2026-11-07T01:00:00Z",
   }));
-  await page
-    .locator("#radio-input")
-    .setInputFiles({
-      name: "real.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(
-        JSON.stringify({
-          schema: "examguard.radio.v1",
-          source: "test receiver",
-          isDemo: false,
-          samples,
-        }),
-      ),
-    });
+  await page.locator("#radio-input").setInputFiles({
+    name: "real.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        schema: "examguard.radio.v1",
+        source: "test receiver",
+        isDemo: false,
+        samples,
+      }),
+    ),
+  });
   await expect(page.locator(".signal-conclusion strong")).toHaveText("A");
   expect((await report(page)).radioCapture.samples).toHaveLength(7);
 });
@@ -224,7 +240,7 @@ test("photo search runs real local WASM, returns catalog candidates and works of
     "data-guide",
     "meta",
   );
-  await page.screenshot({
+  await takeShot(page, {
     path: testInfo.outputPath("photo-results.png"),
     fullPage: true,
   });
