@@ -2,6 +2,8 @@
 
 검토일: 2026-11-07. 제공된 `code_artifact.md`의 기능 기획과 `examguard.html`의 화면 구상을 검토하여 구현했습니다. 원본 파일의 절대 경로와 비공개 자료는 공개 저장소에 포함하지 않습니다.
 
+프로젝트의 첫 단계는 **모드 A · 교실 전파 탐색**입니다. B · 교탁 위 정밀 광학 판독과 C · 3초 실물 도감은 발견 후 실물을 확인하는 단계입니다. 현재 연결 범위는 [INTEGRATIONS.md](INTEGRATIONS.md), 제조사 코드와 API 역할은 [MODE_A.md](MODE_A.md)에 설명합니다.
+
 ## 핵심 보완
 
 | 원안의 가정 | 검토 결과와 반영 |
@@ -35,7 +37,7 @@
 
 | 프로젝트 | 주요 초점 | ExamGuard와의 관계 |
 | --- | --- | --- |
-| [yj_nearbyglasses](https://github.com/yjeanrenaud/yj_nearbyglasses) | Android에서 주변 스마트안경 BLE 관찰 | 네이티브 수신·광고 수집을 대신한다고 주장하지 않습니다. 시험장 절차와 실물 도감에 집중합니다. |
+| [yj_nearbyglasses](https://github.com/yjeanrenaud/yj_nearbyglasses) | 네이티브 앱에서 주변 스마트안경 BLE 관찰 | 네이티브 수신·광고 수집을 대신한다고 주장하지 않습니다. 시험장 절차와 실물 도감에 집중합니다. |
 | [BLE-Scanner](https://github.com/BenGeorgie55/BLE-Scanner) | ESP32 BLE 스캔 | 외부 수신기의 관측을 지정 JSON으로 변환해 앱에서 구역별 비교할 수 있습니다. 전용 어댑터는 아직 없습니다. |
 | [metadetect](https://github.com/Metrix187/metadetect) | 웹/ESP32 기반 Meta 탐지 도구 | 자동 탐지 영역은 겹칠 수 있으므로 독창성을 주장하지 않습니다. ExamGuard는 준비·사진 도감·관찰·보고서 흐름에 초점을 둡니다. |
 

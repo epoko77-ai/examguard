@@ -37,9 +37,13 @@ test("core UI, preflight, training records, catalog, mobile layout and offline r
   const requested: string[] = [];
   page.on("request", (r) => requested.push(r.url()));
   await page.goto("./");
-  await expect(page.locator("#page-title")).toHaveText("스마트안경 도감");
-  await go(page, "wireless");
-  await expect(page.locator("#page-title")).toHaveText("무선 기기 확인");
+  await expect(page.locator("#page-title")).toHaveText("교실 전파 탐색");
+  await expect(page.locator(".primary-nav .nav-item")).toHaveCount(3);
+  await page.locator("#ble-help").click();
+  await expect(page.locator("dialog")).toContainText(
+    "페어링 상대나 외부 인터넷 사용 여부",
+  );
+  await page.locator(".dialog-close").click();
   await expect(page.locator("#scan-button")).toBeDisabled();
   await expect(page.locator("#connection-status")).toContainText(
     "기본 도감 오프라인 준비 완료",

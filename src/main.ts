@@ -1,5 +1,6 @@
 import "./styles.css";
 import "./photo.css";
+import "./modes.css";
 import { icon } from "./lib/icons";
 import {
   createReport,
@@ -38,24 +39,38 @@ const $$ = <T extends HTMLElement = HTMLElement>(selector: string) => [
 ];
 const asset = (name: string) => `${import.meta.env.BASE_URL}${name}`;
 const repository = "https://github.com/epoko77-ai/examguard";
-const nav: { page: Page; icon: string; title: string; subtitle: string }[] = [
+const nav: {
+  page: Page;
+  icon: string;
+  title: string;
+  menu?: string;
+  mode?: string;
+  subtitle: string;
+}[] = [
   {
     page: "wireless",
     icon: "radio",
-    title: "무선 기기 확인",
-    subtitle: "전원 종료·수거 후, 남아 있는 기기를 차분히 확인하세요.",
+    title: "교실 전파 탐색",
+    mode: "A",
+    subtitle:
+      "전원 종료·수거 후 남아 있는 BLE 기기를 먼저 확인하고, 실물 점검으로 연결하세요.",
   },
   {
     page: "optical",
     icon: "camera",
-    title: "광학 검사",
-    subtitle: "카메라와 이미지 필터로 안경의 작은 부품을 자세히 살펴보세요.",
+    title: "교탁 위 정밀 광학 판독",
+    menu: "교탁 위 광학 판독",
+    mode: "B",
+    subtitle:
+      "교탁 위에 놓인 안경의 카메라·충전부·렌즈 구조를 확대해 직접 살펴보세요.",
   },
   {
     page: "guide",
     icon: "book",
-    title: "스마트안경 도감",
-    subtitle: "외형의 단서를 찾고, 공식 자료와 실물을 함께 대조하세요.",
+    title: "3초 실물 도감",
+    mode: "C",
+    subtitle:
+      "발견한 안경의 기종 후보를 좁히고, 공식 자료와 부품 위치를 실물에 대조하세요.",
   },
   {
     page: "zones",
@@ -94,12 +109,15 @@ const deviceKeys = new Map<string, string>();
 let offlineReady = false;
 let guideCategory = "all";
 let toastTimer: ReturnType<typeof setTimeout>;
+const menuButton = (item: (typeof nav)[number]) =>
+  `<button class="nav-item ${item.page === "wireless" ? "active" : ""}" data-page="${item.page}" ${item.page === "wireless" ? 'aria-current="page"' : ""}>${icon(item.icon)}<span>${item.mode ? `<small class="nav-mode">${item.mode}</small>` : ""}${item.menu ?? item.title}</span>${item.page === "records" ? '<span id="nav-record-count" class="nav-count">0</span>' : ""}</button>`;
 
 $("#app").innerHTML = `
   <aside class="sidebar">
-    <a href="#guide" class="brand" aria-label="ExamGuard 홈"><span class="brand-symbol">${icon("shield")}</span><span>Exam<span class="mint">Guard</span><small>시험의 공정함을 지키는 도구</small></span></a>
+    <a href="#wireless" class="brand" aria-label="ExamGuard 홈"><span class="brand-symbol">${icon("shield")}</span><span>Exam<span class="mint">Guard</span><small>시험의 공정함을 지키는 도구</small></span></a>
     <div class="workspace-label"><span class="status-dot"></span> INSPECTION WORKSPACE</div>
-    <nav aria-label="주 메뉴">${nav.map((item, i) => `<button class="nav-item ${i === 0 ? "active" : ""}" data-page="${item.page}" ${i === 0 ? 'aria-current="page"' : ""}>${icon(item.icon)}<span>${item.title}</span>${item.page === "records" ? '<span id="nav-record-count" class="nav-count">0</span>' : ""}</button>`).join("")}</nav>
+    <nav class="primary-nav" aria-label="세 가지 점검 모드">${nav.slice(0, 3).map(menuButton).join("")}</nav>
+    <div class="aux-nav-label">측정·기록 보조 도구</div><nav class="aux-nav" aria-label="측정과 기록">${nav.slice(3).map(menuButton).join("")}</nav>
     <div class="sidebar-bottom">
       <div class="local-card">${icon("lock")}<strong>이 기기 안에서만</strong><p>영상과 점검 기록을<br>서버로 전송하지 않습니다.</p><span>LOCAL PROCESSING</span></div>
       <button class="sidebar-link" id="help-button">${icon("info")} 사용 가이드 ${icon("arrow")}</button>
@@ -110,7 +128,7 @@ $("#app").innerHTML = `
   <div class="workspace">
     <header class="topbar"><div class="breadcrumb">감독관 도구 <span>/</span> <strong id="breadcrumb-current">무선 기기 확인</strong></div><div class="topbar-right"><span class="connection" id="connection-status"><span class="status-dot"></span> 연결 상태 확인 중</span><button class="button small ghost" id="install-button">${icon("download")}<span>앱 설치</span></button></div></header>
     <main id="main" tabindex="-1">
-      <div class="page-heading"><div><div class="eyebrow">A CLEARER VIEW. A FAIRER EXAM.</div><h1 id="page-title">무선 기기 확인</h1><p id="page-subtitle">${nav[0]!.subtitle}</p></div><button class="button secondary small" id="reset-button">${icon("reset")} 새 점검</button></div>
+      <div class="page-heading"><div><div class="eyebrow">A CLEARER VIEW. A FAIRER EXAM.</div><h1 id="page-title">교실 전파 탐색</h1><p id="page-subtitle">${nav[0]!.subtitle}</p></div><button class="button secondary small" id="reset-button">${icon("reset")} 새 점검</button></div>
 
       <section id="page-wireless" class="page-section" aria-label="무선 기기 확인">
         <div class="preflight-panel"><div class="section-heading"><h2>${icon("shield")} 점검 전 준비</h2><span class="subtle" id="preflight-count">0 / 3 완료</span></div>
@@ -126,11 +144,11 @@ $("#app").innerHTML = `
             .join("")}</div>
         </div>
         <div class="work-grid"><div class="main-column">
-          <article class="panel wireless-panel"><div class="panel-header"><h2>${icon("radio")} 주변 기기 확인</h2><div class="segmented" role="group" aria-label="점검 모드"><button id="live-mode" class="selected" aria-pressed="true">현장 점검</button><button id="demo-mode" aria-pressed="false">연습 모드</button></div></div>
+          <article class="panel wireless-panel"><div class="panel-header"><h2>${icon("radio")} A · 교실 전파 탐색</h2><div class="segmented" role="group" aria-label="점검 모드"><button id="live-mode" class="selected" aria-pressed="true">현장 점검</button><button id="demo-mode" aria-pressed="false">연습 모드</button></div></div>
             <div class="wireless-body"><div class="radar" aria-hidden="true"><div class="radar-ring r1"></div><div class="radar-ring r2"></div><div class="radar-ring r3"></div><div class="radar-axis horizontal"></div><div class="radar-axis vertical"></div><div class="radar-wedge"></div><div class="radar-core">${icon("bluetooth")}</div><span class="radar-label">BLUETOOTH LE</span><span class="radar-tick t1">N</span><span class="radar-tick t2">E</span></div>
               <div class="wireless-copy"><div class="badge muted-badge" id="scan-status">${icon("power")} 점검 준비</div><h3 id="scan-title">먼저 전원을 끄고,<br>남아 있는 기기를 확인하세요.</h3><p id="scan-description">준비 항목을 확인한 뒤 브라우저의 기기 목록을 엽니다. 목록에서 선택한 기기만 아래에 기록됩니다.</p><button class="button primary" id="scan-button">${icon("bluetooth")} Bluetooth 기기 선택 ${icon("arrow")}</button><p class="tiny" id="scan-hint"></p><p id="scan-message" class="inline-message" role="status"></p></div>
             </div>
-            <div class="panel-footnote">${icon("info")} <span>기기 발견은 추가 확인의 단서입니다. 이름만으로 기종·소유자·부정행위를 판정하지 않습니다.</span></div>
+            <div class="panel-footnote">${icon("info")} <span>기기 선택창은 브라우저가 보여줍니다. 선택한 기기만 기록하며 페어링·인터넷 사용 여부는 확인되지 않습니다.</span></div><div class="ble-help-link"><button class="text-button" id="ble-help">이 모드의 탐색 방식과 확인 범위 ${icon("arrow")}</button></div>
           </article>
           <div class="stat-grid"><div class="stat-card"><span>선택한 기기</span><strong id="device-count">00</strong><small>전체 주변 기기 수가 아닙니다</small></div><div class="stat-card"><span>추가 확인 필요</span><strong class="amber" id="followup-count">00</strong><small>감독관이 표시한 항목</small></div><div class="stat-card"><span>허용 장비로 확인</span><strong class="mint" id="allowed-count">00</strong><small>확인 후 직접 분류한 장비</small></div></div>
           <article class="panel"><div class="panel-header"><h2>기기 확인 목록 <span class="count-badge" id="list-count">0</span></h2><label class="zone-picker">현재 확인 구역 <select id="current-zone" aria-label="현재 확인 구역">${zoneOptions()}</select></label></div><div id="device-list"></div><div class="list-footer"><span id="list-source">현장 점검 기록 · 이 탭에서만 유지</span><button class="text-button" data-page="records">전체 기록 ${icon("arrow")}</button></div></article>
@@ -154,7 +172,7 @@ $("#app").innerHTML = `
       </section>
 
       <section id="page-optical" class="page-section" aria-label="광학 검사" hidden>
-        <div class="work-grid"><div class="main-column"><article class="panel camera-panel"><div class="panel-header"><h2>${icon("camera")} 광학 검사 화면</h2><span class="badge amber-badge" id="camera-source">연습용 일러스트</span></div>
+        <div class="work-grid"><div class="main-column"><article class="panel camera-panel"><div class="panel-header"><h2>${icon("camera")} B · 교탁 위 정밀 광학 판독</h2><span class="badge amber-badge" id="camera-source">연습용 일러스트</span></div>
           <div class="viewfinder"><canvas id="optical-canvas" aria-label="카메라 또는 선택한 이미지의 검사 화면"></canvas><div class="viewfinder-top"><span id="filter-badge">ORIGINAL</span><span id="viewfinder-source">ILLUSTRATION · 실제 측정 아님</span></div><div class="target-frame" aria-hidden="true"><i></i><i></i><i></i><i></i><span>+</span></div><div class="viewfinder-bottom"><span>안경의 위치와 각도를 바꾸어 관찰하세요</span><span id="zoom-label">1.0×</span></div></div>
           <div class="camera-toolbar"><button class="button primary small" id="camera-button">${icon("camera")} 카메라 켜기</button><button class="button secondary small" id="image-button">${icon("upload")} 사진 열기</button><input id="image-input" type="file" accept="image/jpeg,image/png,image/webp" hidden/><div class="toolbar-spacer"></div><button class="icon-button" id="freeze-button" aria-label="화면 정지" title="화면 정지" aria-pressed="false">${icon("pause")}</button><button class="icon-button" id="torch-button" aria-label="카메라 조명" title="카메라 연결 후 지원 여부를 확인합니다" disabled aria-pressed="false">${icon("flash")}</button></div>
           <div class="camera-find"><button class="text-button" id="camera-find-guide" disabled>${icon("search")} 이 사진으로 도감 찾기 ${icon("arrow")}</button></div><p id="camera-message" class="camera-message" role="status"></p>
@@ -172,7 +190,7 @@ $("#app").innerHTML = `
         </div><aside class="context-column"><article class="panel observation-panel"><div class="section-heading"><h2>직접 관찰한 특징</h2><span class="badge">수동 기록</span></div><p class="panel-description">실제로 확인한 항목만 선택하세요.<br>부품처럼 보이는 형태를 기록합니다.</p><div class="observation-list">${observationLabels.map((label, i) => `<label><input type="checkbox" name="observation" value="${i}"/><span>${label}</span></label>`).join("")}</div><label class="form-label">확인 구역<select id="optical-zone">${zoneOptions()}</select></label><button class="button primary full" id="save-observation">${icon("clipboard")} 관찰 기록 추가</button><p class="tiny" id="observation-source-note">연습용 도식의 기록은 현장 보고서에서 제외됩니다.</p></article><article class="panel inspection-tips"><h2>관찰할 때</h2><p><span>01</span> 사람의 얼굴 대신 책상 위 안경을 비추세요.</p><p><span>02</span> 초점이 맞는 거리에서 앞면과 다리 안쪽을 확인하세요.</p><p><span>03</span> 빛 반사와 나사·장식도 비슷하게 보일 수 있습니다.</p><button class="text-button" data-page="guide">공식 자료와 대조 ${icon("arrow")}</button></article></aside></div>
       </section>
 
-      <section id="page-guide" class="page-section" aria-label="스마트안경 도감" hidden><div id="photo-search-root"></div><div class="atlas-heading"><div><div class="eyebrow">KNOW WHAT TO LOOK FOR</div><h2>3초 실물 대조 도감</h2></div><span class="badge">5종 + 일반 안경 비교</span></div><div class="guide-toolbar"><div class="category-filters" role="group" aria-label="도감 분류">${[
+      <section id="page-guide" class="page-section" aria-label="스마트안경 도감" hidden><div id="photo-search-root"></div><div class="atlas-heading"><div><div class="eyebrow">KNOW WHAT TO LOOK FOR</div><h2>C · 3초 실물 도감</h2></div><span class="badge">5종 + 일반 안경 비교</span></div><div class="guide-toolbar"><div class="category-filters" role="group" aria-label="도감 분류">${[
         ["all", "전체"],
         ["camera", "카메라형"],
         ["display", "디스플레이형"],
@@ -341,14 +359,14 @@ function renderScan() {
     : "먼저 전원을 끄고,<br>남아 있는 기기를 확인하세요.";
   $("#scan-description").textContent = isDemo
     ? "실제 Bluetooth를 사용하지 않는 가상 예시입니다. 연습 기록은 현장 목록과 보고서에 섞이지 않습니다."
-    : "준비 항목을 확인한 뒤 브라우저의 기기 목록을 엽니다. 목록에서 선택한 기기만 아래에 기록됩니다.";
+    : "주변 BLE 기기 목록을 열어 수거 후 남아 있는 기기를 확인합니다. 목록에서 선택한 기기를 기록하고 허용 장비·실물을 대조하세요.";
   $("#scan-status").innerHTML =
     `${icon(isDemo ? "play" : "power")} ${isDemo ? "연습 · 실제 측정 아님" : pendingBluetooth ? "브라우저 선택창 열림" : preflight.every(Boolean) ? "준비 확인 완료" : "점검 준비"}`;
   const button = $("#scan-button") as HTMLButtonElement;
   button.disabled =
     pendingBluetooth ||
     (!isDemo && (!preflight.every(Boolean) || !bluetoothSupported));
-  button.innerHTML = `${icon(isDemo ? "play" : "bluetooth")} ${isDemo ? "연습 데이터 불러오기" : pendingBluetooth ? "선택창에서 기기를 선택하세요" : "Bluetooth 기기 선택"} ${icon("arrow")}`;
+  button.innerHTML = `${icon(isDemo ? "play" : "bluetooth")} ${isDemo ? "연습 데이터 불러오기" : pendingBluetooth ? "선택창에서 기기를 선택하세요" : "교실 스캔 시작"} ${icon("arrow")}`;
   $("#scan-hint").textContent = isDemo
     ? "가상 기기 3개 · 모든 항목에 연습 표시"
     : !bluetoothSupported
@@ -776,6 +794,12 @@ function showHelp() {
   );
 }
 $("#help-button").addEventListener("click", showHelp);
+$("#ble-help").addEventListener("click", () =>
+  openDialog(
+    `<div class="eyebrow">MODE A · RADIO FIRST</div><h2 id="dialog-title">교실 전파 탐색의 확인 범위</h2><ol class="help-steps"><li><strong>전원 종료·수거 확인이 먼저</strong><p>휴대전화와 전자기기를 수거하고 허용된 감독 장비를 확인합니다. 남아 있는 BLE 기기를 추가 확인의 단서로 봅니다.</p></li><li><strong>기기 목록은 브라우저에서 확인</strong><p>‘교실 스캔 시작’을 누르면 지원 브라우저의 BLE 선택창이 열립니다. 전파를 내보내는 방식과 상태에 따라 목록에 나타나지 않는 기기도 있습니다.</p></li><li><strong>선택한 기기만 앱에 기록</strong><p>목록 전체를 자동 수집하지 않습니다. 감독관이 고른 기기와 확인 시각을 기록하며, 제조사·기종·소유자는 미확인 상태입니다.</p></li><li><strong>교탁 위 판독 → 실물 도감으로 연결</strong><p>기관 절차로 확인한 실물의 부품을 살펴보고 기종을 대조합니다. 외부 수신기 자료가 있다면 구역별 RSSI 비교도 사용할 수 있습니다.</p></li></ol><p class="dialog-note">이 웹앱은 페어링 상대나 외부 인터넷 사용 여부를 알아내지 못합니다. Wi-Fi·셀룰러 연결 또는 부정행위 자체를 검출하는 기능은 아닙니다.</p><a class="button secondary full" href="${repository}/blob/main/docs/MODE_A.md" target="_blank" rel="noopener noreferrer">제조사 코드·탐지 확장 설명 ${icon("external")}</a>`,
+  ),
+);
+
 $("#handoff-button").addEventListener("click", () =>
   openDialog(
     `<div class="eyebrow">VERIFY & HAND OVER</div><h2 id="dialog-title">발견 기기 확인·인계</h2><ol class="help-steps"><li><strong>허용 장비부터 구분</strong><p>감독 장비·보조기기·교실 밖 신호를 확인합니다. 기기 이름을 학생 이름으로 해석하지 않습니다.</p></li><li><strong>실물 확인 이유 안내</strong><p>“전자기기 여부 확인을 위해 안경의 모델 표기와 부품을 확인하겠습니다.” 기관 절차에 따라 책상 위 안경을 대조합니다.</p></li><li><strong>부품과 제품 표기 확인</strong><p>카메라·충전부·렌즈 구조를 기록합니다. 외형만으로 전원 상태·사용 행위를 추측하지 않습니다.</p></li><li><strong>담당자가 소지자 확인·인계</strong><p>소지자 확인과 보관은 기관 절차로 진행합니다. BLE 이름·RSSI·사진 후보는 소유자의 증거가 아닙니다. 보고서는 관찰 참고 기록입니다.</p></li></ol>`,
@@ -839,4 +863,4 @@ renderGuides();
 renderRadio();
 renderRecords();
 updateConnection();
-navigate((location.hash.slice(1) || "guide") as Page, false);
+navigate((location.hash.slice(1) || "wireless") as Page, false);
