@@ -28,6 +28,8 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:e2e
+      - name: Prepare public documentation screenshots
+        run: node scripts/copy-previews.mjs
       - name: Browser reports and screenshots
         if: always()
         uses: actions/upload-artifact@v7.0.2

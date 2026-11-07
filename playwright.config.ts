@@ -6,7 +6,11 @@ export default defineConfig({
   retries: 0,
   timeout: 60_000,
   expect: { timeout: 15_000 },
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: [
+    ["list"],
+    ["html", { open: "never" }],
+    ["json", { outputFile: "test-results/summary.json" }],
+  ],
   use: {
     baseURL: "http://127.0.0.1:4173/examguard/",
     trace: "retain-on-failure",
