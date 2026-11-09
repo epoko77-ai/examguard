@@ -8,6 +8,28 @@ export interface DeviceHint {
   guideIds: string[];
   requiresPhysicalCheck: true;
 }
+export type DeviceListFilter = "review" | "all" | "resolved" | DeviceHintKind;
+
+/** Presentation only. A separated record remains in the report and can be restored. */
+export function matchesDeviceListFilter(
+  device: {
+    name: string;
+    disposition: "unreviewed" | "allowed" | "followup" | "checked";
+  },
+  filter: DeviceListFilter,
+): boolean {
+  if (filter === "all") return true;
+  const resolved =
+    device.disposition === "allowed" || device.disposition === "checked";
+  if (filter === "resolved") return resolved;
+  if (filter === "review")
+    return (
+      !resolved &&
+      (device.disposition === "followup" ||
+        assessDeviceName(device.name).kind !== "other-device-hint")
+    );
+  return assessDeviceName(device.name).kind === filter;
+}
 
 // Name hints are intentionally separate from validated advertisement signatures.
 // A brand name alone (Meta, Xiaomi, Samsung, etc.) never establishes device type.
@@ -59,6 +81,23 @@ const otherNames = [
   },
   { pattern: /\bmacbook\b|\bthinkpad\b/i, name: "노트북 관련 이름" },
   { pattern: /\b(?:apple|galaxy)\s*watch\b/i, name: "스마트워치 관련 이름" },
+  {
+    pattern:
+      /\b(?:router|access\s*point|iptime|tp[\s-]?link|netgear)\b|공유기/i,
+    name: "공유기·네트워크 장비 관련 이름",
+  },
+  {
+    pattern: /\b(?:printer|laserjet|officejet|deskjet)\b|프린터/i,
+    name: "프린터 관련 이름",
+  },
+  {
+    pattern: /\b(?:smart\s*tv|samsung\s*tv|lg\s*(?:webos\s*)?tv|bravia)\b/i,
+    name: "TV 관련 이름",
+  },
+  {
+    pattern: /\b(?:speaker|soundbar)\b|스피커|사운드바/i,
+    name: "스피커 관련 이름",
+  },
 ];
 
 export function assessDeviceName(input: string): DeviceHint {

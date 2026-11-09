@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assessDeviceName } from "../src/lib/device-hints.ts";
+import {
+  assessDeviceName,
+  matchesDeviceListFilter,
+} from "../src/lib/device-hints.ts";
 import { guides } from "../src/data/guides.ts";
 
 test("specific glasses names yield an explained candidate, never a confirmed identity", () => {
@@ -34,6 +37,12 @@ test("same-company VR devices and common electronics get different hints, not a 
     "Galaxy S25",
     "MacBook Pro",
     "Apple Watch",
+    "ipTIME_A3004",
+    "TP-Link Router",
+    "NETGEAR_01",
+    "HP LaserJet",
+    "LG webOS TV",
+    "Bluetooth Speaker",
   ]) {
     const hint = assessDeviceName(name);
     assert.equal(hint.kind, "other-device-hint", name);
@@ -50,7 +59,35 @@ test("brand-only, anonymous and conflicting names stay unidentified", () => {
     "Unknown",
     "",
     "Ray-Ban Meta Quest 3",
+    "AI Glasses Speaker",
+    "Meta Router Smart Glasses",
     "<img src=x onerror=alert(1)>",
   ])
     assert.equal(assessDeviceName(name).kind, "unknown", name);
+});
+
+test("review list separates other electronics and completed checks while retaining unknown and explicit follow-ups", () => {
+  const glasses = { name: "Ray-Ban Meta", disposition: "unreviewed" as const };
+  const router = { name: "ipTIME", disposition: "unreviewed" as const };
+  const unknown = { name: "Unknown", disposition: "unreviewed" as const };
+  const allowed = { ...glasses, disposition: "allowed" as const };
+  const checked = { ...unknown, disposition: "checked" as const };
+  assert.equal(matchesDeviceListFilter(glasses, "review"), true);
+  assert.equal(matchesDeviceListFilter(unknown, "review"), true);
+  assert.equal(matchesDeviceListFilter(router, "review"), false);
+  assert.equal(matchesDeviceListFilter(allowed, "review"), false);
+  assert.equal(matchesDeviceListFilter(checked, "review"), false);
+  assert.equal(
+    matchesDeviceListFilter({ ...router, disposition: "followup" }, "review"),
+    true,
+  );
+  assert.equal(matchesDeviceListFilter(allowed, "resolved"), true);
+  assert.equal(matchesDeviceListFilter(checked, "resolved"), true);
+  assert.equal(matchesDeviceListFilter(unknown, "resolved"), false);
+  for (const device of [glasses, router, unknown, allowed, checked])
+    assert.equal(matchesDeviceListFilter(device, "all"), true);
+  assert.equal(matchesDeviceListFilter(router, "other-device-hint"), true);
+  assert.equal(matchesDeviceListFilter(unknown, "unknown"), true);
+  assert.equal(router.disposition, "unreviewed");
+  assert.equal(allowed.disposition, "allowed");
 });

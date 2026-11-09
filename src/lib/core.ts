@@ -238,6 +238,7 @@ export function createReport(
       "Not a misconduct verdict or proof of absence.",
       "Device names are self-reported and do not establish device type or owner.",
       "Browser selections do not provide room-wide scanning or RSSI.",
+      "Name-prefix search can omit unnamed or renamed devices. List filters never remove recorded devices from this report. Names cannot establish whether a device is inside or outside the room.",
       "Imported measurements are user-provided; RSSI cannot establish a seat or an owner.",
       "Training records are excluded. No images or browser-issued Bluetooth device IDs are included. Imported advertisement payloads may contain identifying bytes.",
       "Signature results compare user-provided advertisements and rules. Company ID alone never promotes a device candidate; Wi-Fi traffic and optical lens detection are not analyzed.",

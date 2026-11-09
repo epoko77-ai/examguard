@@ -241,7 +241,9 @@ test("browser selection escaping, explicit classification and reset ignore delay
   for (const button of await page.locator("[data-preflight]").all())
     await button.click();
   await expect(page.locator("#scan-button")).toBeEnabled();
+  await page.locator("#scan-scope").selectOption("all");
   await page.locator("#scan-button").click();
+  await expect(page.locator("#scan-scope")).toBeDisabled();
   await page.evaluate(() =>
     (window as any).resolveDevice({
       id: "private-device-id",
@@ -249,6 +251,7 @@ test("browser selection escaping, explicit classification and reset ignore delay
     }),
   );
   await expect(page.locator("#device-count")).toHaveText("01");
+  await expect(page.locator("#scan-scope")).toBeEnabled();
   expect(await page.evaluate(() => (window as any).injected)).toBeUndefined();
   await page.locator("[data-disposition]").selectOption("allowed");
   const exported = await report(page);
@@ -263,6 +266,7 @@ test("browser selection escaping, explicit classification and reset ignore delay
     (window as any).resolveDevice({ id: "late-device", name: "Late" }),
   );
   await expect(page.locator("#device-count")).toHaveText("00");
+  await expect(page.locator("#scan-scope")).toHaveValue("all");
 });
 test("selected devices show explainable name hints and candidate filtering never changes permission decisions", async ({
   page,
@@ -290,6 +294,8 @@ test("selected devices show explainable name hints and candidate filtering never
   await page.goto("./#wireless");
   for (const button of await page.locator("[data-preflight]").all())
     await button.click();
+  await page.locator("#scan-scope").selectOption("all");
+  await page.locator("#device-hint-filter").selectOption("all");
   for (let i = 1; i <= 5; i++) {
     await page.locator("#scan-button").click();
     await expect(page.locator("#device-count")).toHaveText(`0${i}`);
@@ -332,6 +338,139 @@ test("selected devices show explainable name hints and candidate filtering never
   await page.locator("#reset-button").click();
   await page.locator("#confirm-reset").click();
   await expect(page.locator("#device-hint-filter")).toHaveValue("all");
+});
+test("chooser applies name filters before selection and broad discovery stays an explicit choice", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const inventory = [
+      { id: "router", name: "ipTIME_A3004" },
+      { id: "tv", name: "LG webOS TV" },
+      { id: "printer", name: "HP LaserJet" },
+      { id: "glasses", name: "Ray-Ban Meta" },
+      { id: "unnamed", name: "" },
+    ];
+    (window as any).chooserCalls = [];
+    (window as any).nextDevice = "glasses";
+    Object.defineProperty(navigator, "bluetooth", {
+      configurable: true,
+      value: {
+        requestDevice: async (options: {
+          acceptAllDevices?: boolean;
+          filters?: { namePrefix: string }[];
+        }) => {
+          (window as any).chooserCalls.push(options);
+          if ((window as any).failFiltered && options.filters)
+            throw new TypeError(
+              "Name filters unsupported in this synthetic browser",
+            );
+          const eligible = inventory.filter(
+            (device) =>
+              options.acceptAllDevices ||
+              options.filters?.some((filter) =>
+                device.name.startsWith(filter.namePrefix),
+              ),
+          );
+          (window as any).chooserNames = eligible.map((device) => device.name);
+          const selected = eligible.find(
+            (device) => device.id === (window as any).nextDevice,
+          );
+          if (!selected)
+            throw new DOMException("No selection", "NotFoundError");
+          return selected;
+        },
+      },
+    });
+  });
+  await page.goto("./#wireless");
+  for (const button of await page.locator("[data-preflight]").all())
+    await button.click();
+  await page.locator("#scan-scope").selectOption("glasses");
+  await expect(page.locator("#scan-description")).toContainText(
+    "Wi-Fi 목록은 수집하지 않습니다",
+  );
+  await expect(page.locator("#scan-scope-note")).toContainText(
+    "이름이 없거나 바뀐 기기는 빠질 수",
+  );
+  await page.locator("#scan-button").click();
+  await expect(page.locator("#device-count")).toHaveText("01");
+  expect(await page.evaluate(() => (window as any).chooserNames)).toEqual([
+    "Ray-Ban Meta",
+  ]);
+  expect(
+    await page.evaluate(() => (window as any).chooserCalls[0].acceptAllDevices),
+  ).toBeUndefined();
+  await page.evaluate(() => {
+    (window as any).failFiltered = true;
+  });
+  await page.locator("#scan-button").click();
+  await expect(page.locator("#scan-message")).toContainText(
+    "이름 조건 탐색을 열지 못했습니다",
+  );
+  expect(await page.evaluate(() => (window as any).chooserCalls.length)).toBe(
+    2,
+  );
+  await expect(page.locator("#scan-scope")).toHaveValue("glasses");
+  // Unsupported filters must never silently reopen an unfiltered chooser.
+  await page.locator("#scan-scope").selectOption("all");
+  await page.evaluate(() => {
+    (window as any).nextDevice = "router";
+  });
+  await page.locator("#scan-button").click();
+  await expect(page.locator("#device-count")).toHaveText("02");
+  expect(await page.evaluate(() => (window as any).chooserCalls[2])).toEqual({
+    acceptAllDevices: true,
+  });
+  await page.evaluate(() => {
+    (window as any).nextDevice = "unnamed";
+  });
+  await page.locator("#scan-button").click();
+  await expect(page.locator("#device-count")).toHaveText("03");
+  await page.locator("#device-hint-filter").selectOption("review");
+  await expect(page.locator("#device-list tbody tr")).toHaveCount(2);
+  await expect(page.locator("#device-list")).toContainText(
+    "이름을 제공하지 않은 기기",
+  );
+  await expect(page.locator("#device-list")).not.toContainText("ipTIME");
+  await expect(page.locator("#show-all-devices")).toContainText("분리한 1개");
+  await page
+    .locator("#device-list tbody tr")
+    .filter({ hasText: "Ray-Ban Meta" })
+    .locator("[data-disposition]")
+    .selectOption("allowed");
+  await expect(page.locator("#device-list tbody tr")).toHaveCount(1);
+  await expect(page.locator("#show-all-devices")).toContainText("분리한 2개");
+  await page.locator("#show-all-devices").click();
+  await expect(page.locator("#device-list tbody tr")).toHaveCount(3);
+  const router = page
+    .locator("#device-list tbody tr")
+    .filter({ hasText: "ipTIME" });
+  await expect(router.locator("[data-disposition]")).toHaveValue("unreviewed");
+  await router.locator("[data-disposition]").selectOption("followup");
+  await page.locator("#device-hint-filter").selectOption("review");
+  await expect(page.locator("#device-list tbody tr")).toHaveCount(2);
+  await expect(page.locator("#device-list")).toContainText("ipTIME");
+  await takeShot(page, {
+    path: testInfo.outputPath("focused-scan.png"),
+    fullPage: true,
+  });
+  const exported = await report(page);
+  expect(exported.devices).toHaveLength(3);
+  expect(
+    exported.devices.find(
+      (device: { name: string }) => device.name === "ipTIME_A3004",
+    ).disposition,
+  ).toBe("followup");
+  expect(
+    exported.devices.find(
+      (device: { name: string }) => device.name === "Ray-Ban Meta",
+    ).disposition,
+  ).toBe("allowed");
+  expect(
+    exported.devices.find((device: { name: string }) =>
+      device.name.includes("이름을 제공하지 않은"),
+    ).nameAssessment.kind,
+  ).toBe("unknown");
 });
 test("camera denial falls back to image, filters can be used and photo search opens with the frame", async ({
   page,

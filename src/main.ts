@@ -29,14 +29,17 @@ import { guides, observationLabels } from "./data/guides";
 import { parseSignatureRules } from "./lib/signatures";
 import type { SignatureRuleSet } from "./lib/signatures";
 import { renderSignatureResults } from "./lib/signature-panel";
-import { assessDeviceName } from "./lib/device-hints";
+import { assessDeviceName, matchesDeviceListFilter } from "./lib/device-hints";
+import type { DeviceListFilter } from "./lib/device-hints";
+import { buildBluetoothRequest } from "./lib/bluetooth-scan";
+import type { BluetoothRequestOptions, ScanScope } from "./lib/bluetooth-scan";
 import { getBrowserSupport } from "./lib/browser-support";
 
 type Page = "wireless" | "optical" | "guide" | "zones" | "records";
 type BrowserDevice = { id: string; name?: string };
 type BluetoothNavigator = Navigator & {
   bluetooth?: {
-    requestDevice(options: { acceptAllDevices: true }): Promise<BrowserDevice>;
+    requestDevice(options: BluetoothRequestOptions): Promise<BrowserDevice>;
   };
 };
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
@@ -112,7 +115,8 @@ let devices: DeviceRecord[] = [];
 let inspections: Inspection[] = [];
 let radioCapture: RadioCapture | null = null;
 let signatureRules: SignatureRuleSet | null = null;
-let deviceHintFilter = "all";
+let deviceHintFilter: DeviceListFilter = "all";
+let scanScope: ScanScope = "all";
 let pendingBluetooth = false;
 let sessionGeneration = 0;
 let cameraState: OpticalState = {
@@ -174,12 +178,12 @@ $("#app").innerHTML = `
         <div class="work-grid"><div class="main-column">
           <article class="panel wireless-panel"><div class="panel-header"><h2>${icon("radio")} A · 교실 전파 탐색</h2><div class="segmented" role="group" aria-label="점검 모드"><button id="live-mode" class="selected" aria-pressed="true">현장 점검</button><button id="demo-mode" aria-pressed="false">연습 모드</button></div></div>
             <div class="wireless-body"><div class="radar" aria-hidden="true"><div class="radar-ring r1"></div><div class="radar-ring r2"></div><div class="radar-ring r3"></div><div class="radar-axis horizontal"></div><div class="radar-axis vertical"></div><div class="radar-wedge"></div><div class="radar-core">${icon("bluetooth")}</div><span class="radar-label">BLUETOOTH LE</span><span class="radar-tick t1">N</span><span class="radar-tick t2">E</span></div>
-              <div class="wireless-copy"><div class="badge muted-badge" id="scan-status">${icon("power")} 점검 준비</div><h3 id="scan-title">먼저 전원을 끄고,<br>남아 있는 기기를 확인하세요.</h3><p id="scan-description">준비 항목을 확인한 뒤 브라우저의 기기 목록을 엽니다. 목록에서 선택한 기기만 아래에 기록됩니다.</p><button class="button primary" id="scan-button">${icon("bluetooth")} Bluetooth 기기 선택 ${icon("arrow")}</button><p class="tiny" id="scan-hint"></p><p id="scan-message" class="inline-message" role="status"></p></div>
+              <div class="wireless-copy"><div class="badge muted-badge" id="scan-status">${icon("power")} 점검 준비</div><h3 id="scan-title">먼저 전원을 끄고,<br>남아 있는 기기를 확인하세요.</h3><p id="scan-description">준비 항목을 확인한 뒤 브라우저의 기기 목록을 엽니다. 목록에서 선택한 기기만 아래에 기록됩니다.</p><div class="scan-scope"><label for="scan-scope">탐색 범위</label><select id="scan-scope" aria-describedby="scan-scope-note"><option value="all">주변 BLE 전체</option><option value="glasses">안경 관련 이름</option></select><p id="scan-scope-note"></p></div><button class="button primary" id="scan-button">${icon("bluetooth")} Bluetooth 기기 선택 ${icon("arrow")}</button><p class="tiny" id="scan-hint"></p><p id="scan-message" class="inline-message" role="status"></p></div>
             </div>
             <div class="panel-footnote">${icon("info")} <span>기기 선택창은 브라우저가 보여줍니다. 선택한 기기만 기록하며 페어링·인터넷 사용 여부는 확인되지 않습니다.</span></div><div class="ble-help-link"><button class="text-button" id="ble-help">이 모드의 탐색 방식과 확인 범위 ${icon("arrow")}</button></div>
           </article>
           <div class="stat-grid"><div class="stat-card"><span>선택한 기기</span><strong id="device-count">00</strong><small>전체 주변 기기 수가 아닙니다</small></div><div class="stat-card"><span>추가 확인 필요</span><strong class="amber" id="followup-count">00</strong><small>감독관이 표시한 항목</small></div><div class="stat-card"><span>허용 장비로 확인</span><strong class="mint" id="allowed-count">00</strong><small>확인 후 직접 분류한 장비</small></div></div>
-          <article class="panel"><div class="panel-header"><h2>기기 확인 목록 <span class="count-badge" id="list-count">0</span></h2><label class="zone-picker">현재 확인 구역 <select id="current-zone" aria-label="현재 확인 구역">${zoneOptions()}</select></label></div><div class="device-hint-controls"><label>이름 단서로 보기 <select id="device-hint-filter" aria-label="기기 이름 단서 필터"><option value="all">전체 기기</option><option value="glasses-candidate">스마트안경 의심 후보</option><option value="other-device-hint">다른 전자기기 이름 단서</option><option value="unknown">종류 미확인</option></select></label><p id="device-hint-summary" role="status"></p><small>선택한 기기의 이름으로 1차 분류합니다. 이름은 변경될 수 있으며, 회사명만으로 안경을 판정하지 않습니다. 브라우저 선택창 전체를 분류하는 기능은 아닙니다.</small></div><div id="device-list"></div><div class="list-footer"><span id="list-source">현장 점검 기록 · 이 탭에서만 유지</span><button class="text-button" data-page="records">전체 기록 ${icon("arrow")}</button></div></article>
+          <article class="panel"><div class="panel-header"><h2>기기 확인 목록 <span class="count-badge" id="list-count">0</span></h2><label class="zone-picker">현재 확인 구역 <select id="current-zone" aria-label="현재 확인 구역">${zoneOptions()}</select></label></div><div class="device-hint-controls"><label>목록에 표시할 기기 <select id="device-hint-filter" aria-label="기기 목록 필터"><option value="all">전체 기기</option><option value="review">확인할 기기 · 미확인 포함</option><option value="resolved">허용·실물 확인 완료</option><option value="glasses-candidate">스마트안경 의심 후보</option><option value="other-device-hint">다른 전자기기 이름 단서</option><option value="unknown">종류 미확인</option></select></label><p id="device-hint-summary" role="status"></p><button class="text-button" id="show-all-devices" hidden>분리한 기기 포함 전체 보기</button><small>이름은 변경될 수 있습니다. 회사명만으로 안경을 판정하지 않으며, 종류 미확인은 별도로 확인하세요. 화면에서 숨긴 기록도 전체 목록과 보고서에 남습니다.</small></div><div id="device-list"></div><div class="list-footer"><span id="list-source">현장 점검 기록 · 이 탭에서만 유지</span><button class="text-button" data-page="records">전체 기록 ${icon("arrow")}</button></div></article>
         </div><aside class="context-column">
           <article class="panel workflow-panel"><div class="section-heading"><h2>현장 점검 순서</h2><span class="badge">4 STEPS</span></div><ol class="workflow">${[
             ["전원 종료·수거", "휴대전화와 전자기기 수거를 먼저 확인합니다."],
@@ -386,7 +390,15 @@ function renderScan() {
     : "먼저 전원을 끄고,<br>남아 있는 기기를 확인하세요.";
   $("#scan-description").textContent = isDemo
     ? "실제 Bluetooth를 사용하지 않는 가상 예시입니다. 연습 기록은 현장 목록과 보고서에 섞이지 않습니다."
-    : "주변 BLE 기기 목록을 열어 수거 후 남아 있는 기기를 확인합니다. 목록에서 선택한 기기를 기록하고 허용 장비·실물을 대조하세요.";
+    : "이 탐색은 Bluetooth 기기를 확인합니다. Wi-Fi 목록은 수집하지 않습니다. 선택한 기기를 기록하고 실물과 대조하세요.";
+  const scopeSelect = $<HTMLSelectElement>("#scan-scope");
+  scopeSelect.value = scanScope;
+  scopeSelect.disabled = isDemo || pendingBluetooth;
+  $("#scan-scope-note").textContent = isDemo
+    ? "연습 모드에서는 탐색 범위를 적용하지 않습니다."
+    : scanScope === "glasses"
+      ? "Ray-Ban·Even G1 등 안경 관련 이름으로 시작하는 기기만 선택창에 표시합니다. 이름이 없거나 바뀐 기기는 빠질 수 있으니, 필요하면 ‘주변 BLE 전체’로 확인하세요."
+      : "이름 조건 없이 주변 BLE 기기를 표시합니다. 공유기·TV 등 다른 장비나 교실 밖 기기도 섞일 수 있습니다. 실물과 확인 구역을 대조하세요.";
   $("#scan-status").innerHTML =
     `${icon(isDemo ? "play" : "power")} ${isDemo ? "연습 · 실제 측정 아님" : pendingBluetooth ? "브라우저 선택창 열림" : preflight.every(Boolean) ? "준비 확인 완료" : "점검 준비"}`;
   const button = $("#scan-button") as HTMLButtonElement;
@@ -400,9 +412,14 @@ function renderScan() {
       ? browserSupport.hint
       : !preflight.every(Boolean)
         ? "위의 준비 항목 3개를 먼저 확인해 주세요."
-        : "BLE 기능이 켜져 있어야 합니다. 전체 전파·Wi-Fi·셀룰러 스캐너는 아닙니다.";
+        : "빈 목록은 기기가 없다는 뜻이 아닙니다. 이름·신호만으로 교실 안팎을 판별할 수 없습니다.";
   $(".radar").classList.toggle("requesting", pendingBluetooth);
 }
+$("#scan-scope").addEventListener("change", (event) => {
+  scanScope = (event.target as HTMLSelectElement).value as ScanScope;
+  $("#scan-message").textContent = "";
+  renderScan();
+});
 $("#live-mode").addEventListener("click", () => {
   mode = "live";
   $("#scan-message").textContent = "";
@@ -448,6 +465,7 @@ $("#scan-button").addEventListener("click", async () => {
   if (pendingBluetooth || !bluetoothSupported || !preflight.every(Boolean))
     return;
   const generation = sessionGeneration;
+  const scopeAtRequest = scanScope;
   const preparationAtRequest: Preflight = [...preflight];
   const zoneAtRequest = ($("#current-zone") as HTMLSelectElement).value as Zone;
   pendingBluetooth = true;
@@ -455,7 +473,9 @@ $("#scan-button").addEventListener("click", async () => {
   renderScan();
   try {
     // No GATT connection, identity guess, manufacturer claim, or fabricated RSSI.
-    const device = await bluetooth!.requestDevice({ acceptAllDevices: true });
+    const device = await bluetooth!.requestDevice(
+      buildBluetoothRequest(scopeAtRequest),
+    );
     if (generation !== sessionGeneration) return;
     const now = new Date().toISOString();
     const existing = devices.find((d) => d.id === deviceKeys.get(device.id));
@@ -483,17 +503,26 @@ $("#scan-button").addEventListener("click", async () => {
       devices.push(record);
       toast("선택한 기기를 기록했습니다. 실물과 허용 여부를 확인하세요.");
     }
+    const selectedRecord = devices.find(
+      (d) => d.id === deviceKeys.get(device.id),
+    )!;
+    const inCurrentList =
+      mode === "live" &&
+      matchesDeviceListFilter(selectedRecord, deviceHintFilter);
     $("#scan-message").textContent =
-      `${assessDeviceName(device.name || "").label} · 아래 목록에서 이름 단서와 근거를 확인하세요. 신호 세기·소유자는 확인되지 않았습니다.`;
+      `${assessDeviceName(device.name || "").label} · ${inCurrentList ? "아래 목록에서 이름 단서와 근거를 확인하세요." : "기록했습니다. 현장 점검의 ‘전체 기기’에서 확인할 수 있습니다."} 신호 세기·소유자는 확인되지 않았습니다.`;
   } catch (error) {
     if (generation !== sessionGeneration) return;
-    const name = error instanceof DOMException ? error.name : "";
+    const name = error instanceof Error ? error.name : "";
     $("#scan-message").textContent =
       name === "NotFoundError"
-        ? "기기를 선택하지 않았습니다. 취소·검색 시간 초과는 기기가 없다는 뜻이 아닙니다."
+        ? `기기를 선택하지 않았습니다. 취소·검색 시간 초과는 기기가 없다는 뜻이 아닙니다.${scopeAtRequest === "glasses" ? " 이름이 없거나 바뀐 기기는 ‘주변 BLE 전체’로 확인하세요." : ""}`
         : name === "NotAllowedError" || name === "SecurityError"
           ? "Bluetooth 권한이 허용되지 않았습니다. 브라우저와 운영체제 설정을 확인해 주세요."
-          : "기기 목록을 열지 못했습니다. Bluetooth 전원과 브라우저 지원 여부를 확인해 주세요.";
+          : scopeAtRequest === "glasses" &&
+              (name === "TypeError" || name === "NotSupportedError")
+            ? "이 브라우저에서 이름 조건 탐색을 열지 못했습니다. ‘주변 BLE 전체’로 바꿔 다시 시도하세요."
+            : "기기 목록을 열지 못했습니다. Bluetooth 전원과 브라우저 지원 여부를 확인해 주세요.";
   } finally {
     pendingBluetooth = false;
     renderScan();
@@ -515,7 +544,13 @@ function renderDeviceHint(name: string) {
   return `<div class="device-hint ${hint.kind}" data-device-hint="${hint.kind}"><strong>${hint.label}</strong><p>${esc(hint.reason)}</p>${hint.kind === "glasses-candidate" ? '<a class="text-button" href="#guide">실물 도감 대조 →</a>' : ""}</div>`;
 }
 $("#device-hint-filter").addEventListener("change", (event) => {
-  deviceHintFilter = (event.target as HTMLSelectElement).value;
+  deviceHintFilter = (event.target as HTMLSelectElement)
+    .value as DeviceListFilter;
+  renderDevices();
+});
+$("#show-all-devices").addEventListener("click", () => {
+  deviceHintFilter = "all";
+  $<HTMLSelectElement>("#device-hint-filter").value = "all";
   renderDevices();
 });
 function renderDevices() {
@@ -529,7 +564,6 @@ function renderDevices() {
   $("#allowed-count").textContent = pad(
     visible.filter((d) => d.disposition === "allowed").length,
   );
-  $("#list-count").textContent = String(visible.length);
   $("#list-source").textContent =
     mode === "demo"
       ? "연습 데이터 · 실제 탐지 결과 아님 · 보고서에서 제외"
@@ -538,19 +572,21 @@ function renderDevices() {
     device,
     hint: assessDeviceName(device.name),
   }));
-  $("#device-hint-summary").textContent =
-    `의심 후보 ${hints.filter((r) => r.hint.kind === "glasses-candidate").length} · 다른 기기 이름 단서 ${hints.filter((r) => r.hint.kind === "other-device-hint").length} · 종류 미확인 ${hints.filter((r) => r.hint.kind === "unknown").length}`;
   const priority = {
     "glasses-candidate": 0,
     unknown: 1,
     "other-device-hint": 2,
   };
   const filtered = hints
-    .filter(
-      (r) => deviceHintFilter === "all" || r.hint.kind === deviceHintFilter,
-    )
+    .filter((r) => matchesDeviceListFilter(r.device, deviceHintFilter))
     .sort((a, b) => priority[a.hint.kind] - priority[b.hint.kind])
     .map((r) => r.device);
+  const separated = visible.length - filtered.length;
+  $("#list-count").textContent = `${filtered.length} / ${visible.length}`;
+  $("#device-hint-summary").textContent =
+    `전체 ${visible.length}개 중 ${filtered.length}개 표시 · 의심 후보 ${hints.filter((r) => r.hint.kind === "glasses-candidate").length} · 다른 기기 이름 단서 ${hints.filter((r) => r.hint.kind === "other-device-hint").length} · 종류 미확인 ${hints.filter((r) => r.hint.kind === "unknown").length}`;
+  $("#show-all-devices").hidden = separated === 0;
+  $("#show-all-devices").textContent = `분리한 ${separated}개 포함 전체 보기`;
   $("#device-list").innerHTML = !visible.length
     ? `<div class="empty-state">${icon("bluetooth")}<strong>아직 선택한 기기가 없습니다</strong><p>${mode === "demo" ? "연습 데이터를 불러와 점검 흐름을 확인하세요." : "준비 항목을 확인하고 기기 선택창을 열어보세요."}</p><span>빈 목록은 전자기기가 없다는 의미가 아닙니다.</span></div>`
     : !filtered.length
@@ -901,6 +937,7 @@ $("#reset-button").addEventListener("click", () => {
     radioCapture = null;
     signatureRules = null;
     deviceHintFilter = "all";
+    scanScope = "all";
     $<HTMLSelectElement>("#device-hint-filter").value = "all";
     $("#signature-message").textContent = "";
     deviceKeys.clear();

@@ -564,6 +564,30 @@ dialog {
   border-bottom: 1px solid var(--border);
   background: #111e32;
 }
+.scan-scope {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.scan-scope label {
+  color: #c7d7ed;
+  font-size: 12px;
+}
+.scan-scope select {
+  width: 100%;
+  min-width: 0;
+  max-width: 300px;
+}
+.wireless-copy .scan-scope p {
+  margin: 0;
+  color: #b2d0ee;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.device-hint-controls .text-button {
+  margin: 2px 0 10px;
+  font-size: 12px;
+}
 .device-hint-controls label {
   display: flex;
   gap: 12px;

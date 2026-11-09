@@ -6,7 +6,7 @@
 
 **iPhone·iPad의 Safari와 일반 iOS용 Chrome은 Web Bluetooth를 지원하지 않습니다.** 홈 화면에 설치해도 모드 A를 사용할 수 없습니다. Safari에서 B·광학 검사와 C·도감을 이용할 수 있습니다. iPhone의 BLE 대안으로는 별도 Bluefy 브라우저가 있습니다. Safari·Firefox와 Linux 기본 환경은 BLE 탐색용으로 권장하지 않습니다. [자세한 기기별 접속 안내](../README.md#어떤-기기브라우저로-열어야-하나요) · [Chrome 공식 지원 환경](https://developer.chrome.com/docs/capabilities/bluetooth) · [MDN 호환성](https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API#browser_compatibility)
 
-**Bluefy 시험 경로:** [App Store에서 설치](https://apps.apple.com/kr/app/bluefy-web-ble-browser/id1492822055) → Bluefy 앱 실행 → ExamGuard 주소 붙여넣기 → Bluetooth 켜기·권한 허용 → 준비 항목 확인 → 교실 스캔 시작. [개발사의 Web Bluetooth 지원 안내](https://bluefy.app/guide.html)는 확인했지만, **ExamGuard의 `acceptAllDevices` 선택창 및 실제 iPhone·Bluefy·스마트안경 조합은 아직 검증하지 않았습니다.** Android/PC 대안과 구분해 실험적 경로로 안내합니다. iOS 기기 자체의 BLE 스캔 불가능을 의미하지 않습니다.
+**Bluefy 시험 경로:** [App Store에서 설치](https://apps.apple.com/kr/app/bluefy-web-ble-browser/id1492822055) → Bluefy 앱 실행 → ExamGuard 주소 붙여넣기 → Bluetooth 켜기·권한 허용 → 준비 항목 확인 → 교실 스캔 시작. [개발사의 Web Bluetooth 지원 안내](https://bluefy.app/guide.html)는 확인했지만, **ExamGuard의 이름 조건·전체 BLE 선택창 및 실제 iPhone·Bluefy·스마트안경 조합은 아직 검증하지 않았습니다.** Android/PC 대안과 구분해 실험적 경로로 안내합니다. iOS 기기 자체의 BLE 스캔 불가능을 의미하지 않습니다.
 
 앱은 HTTPS 보안 환경과 실제 `navigator.bluetooth.requestDevice` 존재 여부로 버튼 사용 가능 여부를 정합니다. 기기 종류는 접속 안내에만 사용하며, UA 문자열만으로 탐색 성공을 보장하지 않습니다.
 
@@ -21,10 +21,10 @@ ExamGuard의 목적은 수능·국가고시·학교 시험에서 스마트안경
 ## 감독관에게 보이는 실제 동작
 
 1. **전원 종료·수거·허용 장비** 세 항목을 확인합니다.
-2. **교실 스캔 시작**을 누르면 지원 브라우저의 BLE 기기 선택창이 열립니다.
+2. **탐색 범위**에서 **안경 관련 이름** 또는 **주변 BLE 전체**를 선택한 뒤 **교실 스캔 시작**을 누릅니다. 이름 조건은 브라우저 선택창에 적용되므로 무관한 기기가 줄어듭니다. 이름이 없거나 변경된 기기는 전체 탐색으로 보완합니다.
 3. 감독관이 브라우저 목록을 살펴보고 확인할 기기를 하나 선택합니다.
 4. 앱은 선택한 기기의 이름, 선택 시각, 감독관이 지정한 확인 구역을 기록합니다.
-5. 이름에 안경 제품명 단서가 있으면 의심 후보와 이유를 표시합니다. 다른 전자기기 이름 단서·종류 미확인도 구분하며 후보를 먼저 보여줍니다. 분류 필터는 선택해 기록한 목록에만 적용합니다.
+5. 이름에 안경 제품명 단서가 있으면 의심 후보와 이유를 표시합니다. 다른 전자기기 이름 단서·종류 미확인도 구분하며 후보를 먼저 보여줍니다. 선택 후의 목록 필터는 기록한 기기에만 적용합니다. **확인할 기기**는 다른 장비 단서·허용·확인 완료 기기를 분리하고, 미확인 기기와 직접 지정한 추가 확인 항목은 유지합니다. 숨긴 기록도 전체 목록·보고서에 남습니다.
 6. 허용 장비 또는 추가 확인 필요 상태는 직접 지정하고, 기관 절차에 따라 B·C 모드로 실물을 대조합니다. 이름 단서는 촬영·소유자·기종의 증거가 아닙니다.
 
 브라우저 목록을 여는 동작과 앱이 교실 전체 신호를 자동 수집하는 동작은 다릅니다. 현재는 전자입니다. 버튼은 명시적인 감독관 조작과 브라우저 선택창을 사용하며, 백그라운드에서 은밀하게 모든 기기를 수집하지 않습니다. 상대 기기의 GATT에 연결하거나 강제로 페어링하지 않습니다. [Chrome 공식 설명](https://developer.chrome.com/docs/capabilities/bluetooth)
@@ -47,12 +47,19 @@ ExamGuard의 목적은 수능·국가고시·학교 시험에서 스마트안경
 
 | API 요소 | 역할 | 의미하지 않는 것 |
 | --- | --- | --- |
-| `acceptAllDevices: true` | 제조사/이름 필터 없이 브라우저의 BLE 선택창 요청 | 모든 전파 또는 모든 연결 기기의 완전한 목록 |
+| `filters[].namePrefix` | 지정한 안경 관련 이름으로 시작하는 BLE 기기만 선택창에 표시 | 검증된 기종 판별, 이름 없는/변경된 기기까지 모두 발견 |
+| `acceptAllDevices: true` | 전체 탐색을 직접 선택했을 때 이름 조건 없이 BLE 선택창 요청 | 모든 전파 또는 모든 연결 기기의 완전한 목록 |
 | `optionalManufacturerData` | 요청하는 제조사 데이터 접근 권한 범위 지정 | 자동 스캔 시작, 선택창 전체 반환, 스마트안경 자동 분류 |
 | `filters[].manufacturerData` | 광고의 제조사 데이터를 조건으로 브라우저 선택 후보 제한 | 회사 ID만으로 제품 종류 확정 |
 | 광고 관찰 API/네이티브 수신기 | 지원 환경에서 광고 내용과 수신 정보를 관찰하는 수단 | 일반 브라우저 전체에서 동일하게 사용 가능한 기능 |
 
-현재 ExamGuard는 `requestDevice({ acceptAllDevices: true })`를 사용합니다. 읽지도 않는 제조사 데이터 권한을 넣어 자동 판별 기능처럼 보이게 하지 않습니다. [Web Bluetooth 사양 원문](https://github.com/WebBluetoothCG/web-bluetooth/blob/main/index.bs) · [Chrome 제조사 데이터 필터 설명](https://developer.chrome.com/docs/capabilities/bluetooth#manufacturer-data-filter)
+현재 ExamGuard는 선택한 탐색 범위에 따라 `requestDevice({ filters: [{ namePrefix: … }, …] })` 또는 `requestDevice({ acceptAllDevices: true })`를 사용합니다. 이름 조건은 대소문자를 구분하므로 일반적인 대소문자·띄어쓰기 변형을 검색어로 넣었지만 모든 이름을 포괄하지 않습니다. 이름 조건 오류가 나도 자동으로 전체 탐색을 재요청하지 않습니다. 읽지도 않는 제조사 데이터 권한을 넣어 자동 판별 기능처럼 보이게 하지 않습니다. [Web Bluetooth 사양 원문](https://github.com/WebBluetoothCG/web-bluetooth/blob/main/index.bs) · [Chrome 제조사 데이터 필터 설명](https://developer.chrome.com/docs/capabilities/bluetooth#manufacturer-data-filter)
+
+## 공유기·옆집 신호처럼 보이는 항목
+
+이 웹앱은 Wi-Fi SSID 목록을 읽지 않습니다. 공유기·TV·프린터 이름이 보여도 BLE 기기가 제공한 이름의 단서입니다. 이름 조건 탐색으로 선택창의 범위를 줄이고, 선택 후에는 이름 단서·감독관 확인 상태로 목록을 나눕니다. 분류가 충돌하거나 이름을 모르면 미확인으로 남기며, 다른 장비 단서도 실물 확인 없이 허용으로 바꾸지 않습니다.
+
+브라우저 선택 기록에는 거리·RSSI가 없습니다. 외부 수신기 RSSI도 벽·몸·안테나 영향을 받으므로 단일 임계값으로 ‘옆집’이라고 단정해 제외하지 않습니다. 같은 기기를 여러 구역에서 반복 측정하고 실물을 확인하는 기존 절차를 유지합니다.
 
 ## 제조사 코드와 시그니처의 검증 상태
 
