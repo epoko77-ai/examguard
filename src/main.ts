@@ -115,8 +115,8 @@ let devices: DeviceRecord[] = [];
 let inspections: Inspection[] = [];
 let radioCapture: RadioCapture | null = null;
 let signatureRules: SignatureRuleSet | null = null;
-let deviceHintFilter: DeviceListFilter = "all";
-let scanScope: ScanScope = "all";
+let deviceHintFilter: DeviceListFilter = "glasses-candidate";
+let scanScope: ScanScope = "glasses";
 let pendingBluetooth = false;
 let sessionGeneration = 0;
 let cameraState: OpticalState = {
@@ -178,12 +178,12 @@ $("#app").innerHTML = `
         <div class="work-grid"><div class="main-column">
           <article class="panel wireless-panel"><div class="panel-header"><h2>${icon("radio")} A · 교실 전파 탐색</h2><div class="segmented" role="group" aria-label="점검 모드"><button id="live-mode" class="selected" aria-pressed="true">현장 점검</button><button id="demo-mode" aria-pressed="false">연습 모드</button></div></div>
             <div class="wireless-body"><div class="radar" aria-hidden="true"><div class="radar-ring r1"></div><div class="radar-ring r2"></div><div class="radar-ring r3"></div><div class="radar-axis horizontal"></div><div class="radar-axis vertical"></div><div class="radar-wedge"></div><div class="radar-core">${icon("bluetooth")}</div><span class="radar-label">BLUETOOTH LE</span><span class="radar-tick t1">N</span><span class="radar-tick t2">E</span></div>
-              <div class="wireless-copy"><div class="badge muted-badge" id="scan-status">${icon("power")} 점검 준비</div><h3 id="scan-title">먼저 전원을 끄고,<br>남아 있는 기기를 확인하세요.</h3><p id="scan-description">준비 항목을 확인한 뒤 브라우저의 기기 목록을 엽니다. 목록에서 선택한 기기만 아래에 기록됩니다.</p><div class="scan-scope"><label for="scan-scope">탐색 범위</label><select id="scan-scope" aria-describedby="scan-scope-note"><option value="all">주변 BLE 전체</option><option value="glasses">안경 관련 이름</option></select><p id="scan-scope-note"></p></div><button class="button primary" id="scan-button">${icon("bluetooth")} Bluetooth 기기 선택 ${icon("arrow")}</button><p class="tiny" id="scan-hint"></p><p id="scan-message" class="inline-message" role="status"></p></div>
+              <div class="wireless-copy"><div class="badge muted-badge" id="scan-status">${icon("power")} 점검 준비</div><h3 id="scan-title">먼저 전원을 끄고,<br>남아 있는 기기를 확인하세요.</h3><p id="scan-description">준비 항목을 확인한 뒤 브라우저의 기기 목록을 엽니다. 목록에서 선택한 기기만 아래에 기록됩니다.</p><div class="scan-scope"><label for="scan-scope">탐색 범위</label><select id="scan-scope" aria-describedby="scan-scope-note"><option value="glasses">안경 관련 이름 · 기본</option><option value="all">주변 BLE 전체</option></select><p id="scan-scope-note"></p></div><button class="button primary" id="scan-button">${icon("bluetooth")} Bluetooth 기기 선택 ${icon("arrow")}</button><p class="tiny" id="scan-hint"></p><p id="scan-message" class="inline-message" role="status"></p></div>
             </div>
             <div class="panel-footnote">${icon("info")} <span>기기 선택창은 브라우저가 보여줍니다. 선택한 기기만 기록하며 페어링·인터넷 사용 여부는 확인되지 않습니다.</span></div><div class="ble-help-link"><button class="text-button" id="ble-help">이 모드의 탐색 방식과 확인 범위 ${icon("arrow")}</button></div>
           </article>
           <div class="stat-grid"><div class="stat-card"><span>선택한 기기</span><strong id="device-count">00</strong><small>전체 주변 기기 수가 아닙니다</small></div><div class="stat-card"><span>추가 확인 필요</span><strong class="amber" id="followup-count">00</strong><small>감독관이 표시한 항목</small></div><div class="stat-card"><span>허용 장비로 확인</span><strong class="mint" id="allowed-count">00</strong><small>확인 후 직접 분류한 장비</small></div></div>
-          <article class="panel"><div class="panel-header"><h2>기기 확인 목록 <span class="count-badge" id="list-count">0</span></h2><label class="zone-picker">현재 확인 구역 <select id="current-zone" aria-label="현재 확인 구역">${zoneOptions()}</select></label></div><div class="device-hint-controls"><label>목록에 표시할 기기 <select id="device-hint-filter" aria-label="기기 목록 필터"><option value="all">전체 기기</option><option value="review">확인할 기기 · 미확인 포함</option><option value="resolved">허용·실물 확인 완료</option><option value="glasses-candidate">스마트안경 의심 후보</option><option value="other-device-hint">다른 전자기기 이름 단서</option><option value="unknown">종류 미확인</option></select></label><p id="device-hint-summary" role="status"></p><button class="text-button" id="show-all-devices" hidden>분리한 기기 포함 전체 보기</button><small>이름은 변경될 수 있습니다. 회사명만으로 안경을 판정하지 않으며, 종류 미확인은 별도로 확인하세요. 화면에서 숨긴 기록도 전체 목록과 보고서에 남습니다.</small></div><div id="device-list"></div><div class="list-footer"><span id="list-source">현장 점검 기록 · 이 탭에서만 유지</span><button class="text-button" data-page="records">전체 기록 ${icon("arrow")}</button></div></article>
+          <article class="panel"><div class="panel-header"><h2>기기 확인 목록 <span class="count-badge" id="list-count">0</span></h2><label class="zone-picker">현재 확인 구역 <select id="current-zone" aria-label="현재 확인 구역">${zoneOptions()}</select></label></div><div class="device-hint-controls"><label>목록에 표시할 기기 <select id="device-hint-filter" aria-label="기기 목록 필터"><option value="glasses-candidate">미확인 안경 후보 · 기본</option><option value="unknown">종류 미확인</option><option value="review">확인할 기기 · 미확인 포함</option><option value="other-device-hint">다른 전자기기 이름 단서</option><option value="resolved">허용·실물 확인 완료</option><option value="all">전체 기기</option></select></label><p id="device-hint-summary" role="status"></p><button class="text-button" id="show-all-devices" hidden>분리한 기기 포함 전체 보기</button><small>이름은 변경될 수 있습니다. 회사명만으로 안경을 판정하지 않으며, 종류 미확인은 별도로 확인하세요. 기본 목록은 허용·확인 완료를 제외한 안경 후보만 표시합니다. 숨긴 기록도 전체 목록과 보고서에 남습니다.</small></div><div id="device-list"></div><div class="list-footer"><span id="list-source">현장 점검 기록 · 이 탭에서만 유지</span><button class="text-button" data-page="records">전체 기록 ${icon("arrow")}</button></div></article>
         </div><aside class="context-column">
           <article class="panel workflow-panel"><div class="section-heading"><h2>현장 점검 순서</h2><span class="badge">4 STEPS</span></div><ol class="workflow">${[
             ["전원 종료·수거", "휴대전화와 전자기기 수거를 먼저 확인합니다."],
@@ -554,6 +554,7 @@ $("#show-all-devices").addEventListener("click", () => {
   renderDevices();
 });
 function renderDevices() {
+  $<HTMLSelectElement>("#device-hint-filter").value = deviceHintFilter;
   const visible = devices.filter((d) =>
     mode === "demo" ? d.source === "demo" : d.source !== "demo",
   );
@@ -936,9 +937,8 @@ $("#reset-button").addEventListener("click", () => {
     inspections = [];
     radioCapture = null;
     signatureRules = null;
-    deviceHintFilter = "all";
-    scanScope = "all";
-    $<HTMLSelectElement>("#device-hint-filter").value = "all";
+    deviceHintFilter = "glasses-candidate";
+    scanScope = "glasses";
     $("#signature-message").textContent = "";
     deviceKeys.clear();
     preflight.fill(false);
@@ -989,13 +989,13 @@ $("#copy-app-url").addEventListener("click", async () => {
 });
 function showHelp() {
   openDialog(
-    `<div class="eyebrow">QUICK START</div><h2 id="dialog-title">ExamGuard 사용 가이드</h2><p class="dialog-note">다운로드 없이 웹 주소로 사용합니다. BLE 탐색은 Android의 Chrome 또는 Windows·Mac의 Chrome/Edge를 권장합니다. iPhone·iPad에서는 Safari로 광학 검사와 도감을 이용하고, 별도 Bluefy 브라우저로 BLE 탐색을 시도할 수 있습니다(ExamGuard 실기기 호환성 미검증). 홈 화면 설치로 BLE 지원이 추가되지는 않습니다.</p><button class="button secondary small" data-browser-help>기기별 접속 방법 자세히 보기 ${icon("arrow")}</button><ol class="help-steps"><li><strong>휴대전화 전원 종료·전자기기 수거</strong><p>잠금·무음과 전원 종료를 구분하고 허용된 감독 장비를 확인합니다.</p></li><li><strong>Bluetooth 목록에서 기기를 선택</strong><p>지원 브라우저에서 기기를 하나씩 선택합니다. 브라우저가 보여주지 않은 기기나 소유자·RSSI는 알 수 없습니다.</p></li><li><strong>구역과 실물을 확인</strong><p>신호가 의심되면 담당자 절차에 따라 실물을 대조합니다. 광학 필터와 도감은 육안 관찰을 돕습니다.</p></li><li><strong>기록하고 담당자에게 전달</strong><p>확인 구역과 허용 여부를 기록합니다. 최종 판단은 시험 주관기관이 합니다.</p></li></ol><div class="dialog-note"><strong>오프라인 준비</strong><p>인터넷에 연결한 상태에서 앱을 한 번 열고 상단의 ‘기본 도감 오프라인 준비 완료’를 확인하세요. 사진 대조 모델은 첫 대조 때 별도로 내려받습니다. 모델 다운로드와 대조를 마친 뒤 오프라인에서도 시험해 보세요. 브라우저가 캐시를 비우면 재다운로드가 필요합니다. 카메라·Bluetooth 권한과 하드웨어는 별도로 필요합니다. 비행기 모드에서 Bluetooth가 꺼지면 기기 선택은 작동하지 않습니다.</p><strong>기록과 개인정보</strong><p>서버 전송·분석 추적 기능이 없습니다. 기록은 메모리에만 두며 새로고침하면 사라집니다. 내려받은 보고서는 사용자가 직접 관리합니다. 웹 호스팅 제공자의 접속 로그는 별개입니다.</p></div>`,
+    `<div class="eyebrow">QUICK START</div><h2 id="dialog-title">ExamGuard 사용 가이드</h2><p class="dialog-note">다운로드 없이 웹 주소로 사용합니다. BLE 탐색은 Android의 Chrome 또는 Windows·Mac의 Chrome/Edge를 권장합니다. iPhone·iPad에서는 Safari로 광학 검사와 도감을 이용하고, 별도 Bluefy 브라우저로 BLE 탐색을 시도할 수 있습니다(ExamGuard 실기기 호환성 미검증). 홈 화면 설치로 BLE 지원이 추가되지는 않습니다.</p><button class="button secondary small" data-browser-help>기기별 접속 방법 자세히 보기 ${icon("arrow")}</button><ol class="help-steps"><li><strong>휴대전화 전원 종료·전자기기 수거</strong><p>잠금·무음과 전원 종료를 구분하고 허용된 감독 장비를 확인합니다.</p></li><li><strong>Bluetooth 목록에서 기기를 선택</strong><p>지원 브라우저에서 기기를 하나씩 선택합니다. 기본은 안경 관련 이름으로 좁힌 목록입니다. 이름이 없거나 바뀐 기기는 ‘주변 BLE 전체’로 확인하세요. 앱 목록에서도 ‘종류 미확인’과 ‘전체 기기’를 선택할 수 있습니다.</p></li><li><strong>구역과 실물을 확인</strong><p>신호가 의심되면 담당자 절차에 따라 실물을 대조합니다. 광학 필터와 도감은 육안 관찰을 돕습니다.</p></li><li><strong>기록하고 담당자에게 전달</strong><p>확인 구역과 허용 여부를 기록합니다. 최종 판단은 시험 주관기관이 합니다.</p></li></ol><div class="dialog-note"><strong>오프라인 준비</strong><p>인터넷에 연결한 상태에서 앱을 한 번 열고 상단의 ‘기본 도감 오프라인 준비 완료’를 확인하세요. 사진 대조 모델은 첫 대조 때 별도로 내려받습니다. 모델 다운로드와 대조를 마친 뒤 오프라인에서도 시험해 보세요. 브라우저가 캐시를 비우면 재다운로드가 필요합니다. 카메라·Bluetooth 권한과 하드웨어는 별도로 필요합니다. 비행기 모드에서 Bluetooth가 꺼지면 기기 선택은 작동하지 않습니다.</p><strong>기록과 개인정보</strong><p>서버 전송·분석 추적 기능이 없습니다. 기록은 메모리에만 두며 새로고침하면 사라집니다. 내려받은 보고서는 사용자가 직접 관리합니다. 웹 호스팅 제공자의 접속 로그는 별개입니다.</p></div>`,
   );
 }
 $("#help-button").addEventListener("click", showHelp);
 $("#ble-help").addEventListener("click", () =>
   openDialog(
-    `<div class="eyebrow">MODE A · RADIO FIRST</div><h2 id="dialog-title">교실 전파 탐색의 확인 범위</h2><ol class="help-steps"><li><strong>전원 종료·수거 확인이 먼저</strong><p>휴대전화와 전자기기를 수거하고 허용된 감독 장비를 확인합니다. 남아 있는 BLE 기기를 추가 확인의 단서로 봅니다.</p></li><li><strong>기기 목록은 브라우저에서 확인</strong><p>‘교실 스캔 시작’을 누르면 지원 브라우저의 BLE 선택창이 열립니다. 전파를 내보내는 방식과 상태에 따라 목록에 나타나지 않는 기기도 있습니다.</p></li><li><strong>선택한 기기만 앱에 기록</strong><p>목록 전체를 자동 수집하지 않습니다. 감독관이 고른 기기와 확인 시각을 기록하며, 제조사·기종·소유자는 미확인 상태입니다.</p></li><li><strong>교탁 위 판독 → 실물 도감으로 연결</strong><p>기관 절차로 확인한 실물의 부품을 살펴보고 기종을 대조합니다. 외부 수신기 자료가 있다면 구역별 RSSI 비교도 사용할 수 있습니다.</p></li></ol><p class="dialog-note">이 웹앱은 페어링 상대나 외부 인터넷 사용 여부를 알아내지 못합니다. Wi-Fi·셀룰러 연결 또는 부정행위 자체를 검출하는 기능은 아닙니다.</p><a class="button secondary full" href="${repository}/blob/main/docs/MODE_A.md" target="_blank" rel="noopener noreferrer">제조사 코드·탐지 확장 설명 ${icon("external")}</a>`,
+    `<div class="eyebrow">MODE A · RADIO FIRST</div><h2 id="dialog-title">교실 전파 탐색의 확인 범위</h2><ol class="help-steps"><li><strong>전원 종료·수거 확인이 먼저</strong><p>휴대전화와 전자기기를 수거하고 허용된 감독 장비를 확인합니다. 남아 있는 BLE 기기를 추가 확인의 단서로 봅니다.</p></li><li><strong>기기 목록은 브라우저에서 확인</strong><p>‘교실 스캔 시작’을 누르면 안경 관련 이름으로 좁힌 BLE 선택창이 열립니다. 이름이 없거나 바뀐 기기는 ‘주변 BLE 전체’로 보완하세요. Wi-Fi 목록은 수집하지 않습니다. 앱의 기본 목록은 미확인 안경 후보만 표시하며, 나머지 기록은 필터를 바꿔 확인합니다.</p></li><li><strong>선택한 기기만 앱에 기록</strong><p>목록 전체를 자동 수집하지 않습니다. 감독관이 고른 기기와 확인 시각을 기록하며, 제조사·기종·소유자는 미확인 상태입니다.</p></li><li><strong>교탁 위 판독 → 실물 도감으로 연결</strong><p>기관 절차로 확인한 실물의 부품을 살펴보고 기종을 대조합니다. 외부 수신기 자료가 있다면 구역별 RSSI 비교도 사용할 수 있습니다.</p></li></ol><p class="dialog-note">이 웹앱은 페어링 상대나 외부 인터넷 사용 여부를 알아내지 못합니다. Wi-Fi·셀룰러 연결 또는 부정행위 자체를 검출하는 기능은 아닙니다.</p><a class="button secondary full" href="${repository}/blob/main/docs/MODE_A.md" target="_blank" rel="noopener noreferrer">제조사 코드·탐지 확장 설명 ${icon("external")}</a>`,
   ),
 );
 

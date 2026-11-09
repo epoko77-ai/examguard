@@ -35,6 +35,7 @@ for (const [project, label] of [
     "photo-results",
     "signature-results",
     "name-hints",
+    "focused-scan",
     "browser-guidance",
   ]) {
     const file = files.find(
@@ -58,5 +59,5 @@ await writeFile(
   ),
 );
 console.log(
-  "Published sixteen test screenshots and verification counts. Photo credit: CCadio / CC BY 4.0, cropped. See docs/THIRD_PARTY.md.",
+  "Published eighteen test screenshots and verification counts. Photo credit: CCadio / CC BY 4.0, cropped. See docs/THIRD_PARTY.md.",
 );

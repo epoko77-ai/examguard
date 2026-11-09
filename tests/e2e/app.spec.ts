@@ -242,6 +242,7 @@ test("browser selection escaping, explicit classification and reset ignore delay
     await button.click();
   await expect(page.locator("#scan-button")).toBeEnabled();
   await page.locator("#scan-scope").selectOption("all");
+  await page.locator("#device-hint-filter").selectOption("review");
   await page.locator("#scan-button").click();
   await expect(page.locator("#scan-scope")).toBeDisabled();
   await page.evaluate(() =>
@@ -266,7 +267,10 @@ test("browser selection escaping, explicit classification and reset ignore delay
     (window as any).resolveDevice({ id: "late-device", name: "Late" }),
   );
   await expect(page.locator("#device-count")).toHaveText("00");
-  await expect(page.locator("#scan-scope")).toHaveValue("all");
+  await expect(page.locator("#scan-scope")).toHaveValue("glasses");
+  await expect(page.locator("#device-hint-filter")).toHaveValue(
+    "glasses-candidate",
+  );
 });
 test("selected devices show explainable name hints and candidate filtering never changes permission decisions", async ({
   page,
@@ -337,7 +341,9 @@ test("selected devices show explainable name hints and candidate filtering never
   );
   await page.locator("#reset-button").click();
   await page.locator("#confirm-reset").click();
-  await expect(page.locator("#device-hint-filter")).toHaveValue("all");
+  await expect(page.locator("#device-hint-filter")).toHaveValue(
+    "glasses-candidate",
+  );
 });
 test("chooser applies name filters before selection and broad discovery stays an explicit choice", async ({
   page,
@@ -385,7 +391,10 @@ test("chooser applies name filters before selection and broad discovery stays an
   await page.goto("./#wireless");
   for (const button of await page.locator("[data-preflight]").all())
     await button.click();
-  await page.locator("#scan-scope").selectOption("glasses");
+  await expect(page.locator("#scan-scope")).toHaveValue("glasses");
+  await expect(page.locator("#device-hint-filter")).toHaveValue(
+    "glasses-candidate",
+  );
   await expect(page.locator("#scan-description")).toContainText(
     "Wi-Fi 목록은 수집하지 않습니다",
   );
@@ -418,6 +427,7 @@ test("chooser applies name filters before selection and broad discovery stays an
   });
   await page.locator("#scan-button").click();
   await expect(page.locator("#device-count")).toHaveText("02");
+  await expect(page.locator("#device-list")).not.toContainText("ipTIME");
   expect(await page.evaluate(() => (window as any).chooserCalls[2])).toEqual({
     acceptAllDevices: true,
   });
@@ -426,6 +436,16 @@ test("chooser applies name filters before selection and broad discovery stays an
   });
   await page.locator("#scan-button").click();
   await expect(page.locator("#device-count")).toHaveText("03");
+  await expect(page.locator("#device-list tbody tr")).toHaveCount(1);
+  await expect(page.locator("#device-hint-summary")).toContainText(
+    "종류 미확인 1",
+  );
+  await expect(page.locator("#scan-message")).toContainText("전체 기기");
+  await page.locator("#scan-scope").selectOption("glasses");
+  await takeShot(page, {
+    path: testInfo.outputPath("focused-scan.png"),
+    fullPage: true,
+  });
   await page.locator("#device-hint-filter").selectOption("review");
   await expect(page.locator("#device-list tbody tr")).toHaveCount(2);
   await expect(page.locator("#device-list")).toContainText(
@@ -450,10 +470,6 @@ test("chooser applies name filters before selection and broad discovery stays an
   await page.locator("#device-hint-filter").selectOption("review");
   await expect(page.locator("#device-list tbody tr")).toHaveCount(2);
   await expect(page.locator("#device-list")).toContainText("ipTIME");
-  await takeShot(page, {
-    path: testInfo.outputPath("focused-scan.png"),
-    fullPage: true,
-  });
   const exported = await report(page);
   expect(exported.devices).toHaveLength(3);
   expect(

@@ -77,6 +77,11 @@ test("review list separates other electronics and completed checks while retaini
   assert.equal(matchesDeviceListFilter(router, "review"), false);
   assert.equal(matchesDeviceListFilter(allowed, "review"), false);
   assert.equal(matchesDeviceListFilter(checked, "review"), false);
+  assert.equal(matchesDeviceListFilter(glasses, "glasses-candidate"), true);
+  assert.equal(matchesDeviceListFilter(unknown, "glasses-candidate"), false);
+  assert.equal(matchesDeviceListFilter(router, "glasses-candidate"), false);
+  assert.equal(matchesDeviceListFilter(allowed, "glasses-candidate"), false);
+  assert.equal(matchesDeviceListFilter(checked, "glasses-candidate"), false);
   assert.equal(
     matchesDeviceListFilter({ ...router, disposition: "followup" }, "review"),
     true,

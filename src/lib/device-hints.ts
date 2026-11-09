@@ -22,6 +22,10 @@ export function matchesDeviceListFilter(
   const resolved =
     device.disposition === "allowed" || device.disposition === "checked";
   if (filter === "resolved") return resolved;
+  if (filter === "glasses-candidate")
+    return (
+      !resolved && assessDeviceName(device.name).kind === "glasses-candidate"
+    );
   if (filter === "review")
     return (
       !resolved &&
